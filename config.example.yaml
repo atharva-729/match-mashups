@@ -1,0 +1,5 @@
+# Copy to config.yaml (gitignored) and point MATCH_REPO at your local clone of the sister repo
+# (which-match-is-your-song, a.k.a. game-song-match / ipl-song-match). Relative paths resolve from this folder.
+MATCH_REPO: ../ipl-song-match
+# Python with numpy/pandas/librosa/easyocr etc. (see README Phase 0). Only used by run.py to launch the phases.
+PYTHON: ~/.venvs/match-mashups/Scripts/python.exe

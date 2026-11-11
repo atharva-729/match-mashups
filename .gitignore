@@ -1,0 +1,13 @@
+# footage, songs and renders never go in git
+inputs/
+work/
+outputs/
+*.mp4
+*.mov
+*.mkv
+*.mp3
+*.wav
+*.ts
+__pycache__/
+*.pyc
+config.yaml
