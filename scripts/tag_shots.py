@@ -19,7 +19,7 @@
 Writes work/<job>/shots.json, clips.json, contact_sheet.jpg.
 usage: python scripts/tag_shots.py inputs/<job> [--reocr]
 """
-import json, random, re, subprocess, sys
+import json, os, random, re, subprocess, sys
 from collections import Counter
 from pathlib import Path
 
@@ -30,6 +30,7 @@ import sister
 from common import job_from_argv, log, stamp
 
 FPS_OCR = 2.0
+STRIP_SAME = 0.03   # a strip counts as unchanged if < 3% of its pixels moved by > 40 (the NFL bug is see-through)
 ALLOW = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZv-/:.& "
 
 
@@ -102,17 +103,43 @@ def extract_crops(job, part, box):
     return sorted(d.glob("*.png"))
 
 
-def prep(img, threshold):
-    g = cv2.cvtColor(cv2.resize(img, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC), cv2.COLOR_BGR2GRAY)
-    if threshold:
-        g = cv2.adaptiveThreshold(g, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 5)
-    return g
+def strip_split(crops, league):
+    """NFL: the column where the bug's fast-changing right end (game clock) begins: the quietest column (least text
+    edge, averaged over frames) in 70-90% of the width, i.e. a gap between two fields. None for IPL."""
+    if league != "NFL" or not crops:
+        return None
+    fs = crops[:: max(1, len(crops) // 300)]
+    imgs = np.stack([cv2.cvtColor(cv2.imread(str(f)), cv2.COLOR_BGR2GRAY) for f in fs]).astype(float)
+    gx = np.convolve(np.abs(np.diff(imgs, axis=2)).mean(axis=(0, 1)), np.ones(3) / 3, mode="same")
+    w = imgs.shape[2]
+    lo, hi = int(w * 0.70), int(w * 0.90)
+    return lo + int(np.argmin(gx[lo:hi]))
 
 
-def ocr(reader, img, threshold):
-    res = reader.readtext(prep(img, threshold), allowlist=ALLOW, detail=1, paragraph=False)
-    res.sort(key=lambda r: (round(min(p[1] for p in r[0]) / 40), min(p[0] for p in r[0])))   # rows, then left->right
-    return [[t, round(float(c), 3), [int(min(p[0] for p in b)), int(min(p[1] for p in b))]] for b, t, c in res]
+def strips(img, league, split=None):
+    """The bar's text lines at fixed positions (it never moves, so no text detection is needed): IPL = the two rows
+    of its left third (team, score, overs / opponent, target); NFL = the bug cut at `split` into its slow part
+    (down, teams, scores) and its fast part (the game clock). Small strips are upscaled toward the recogniser's 48 px
+    line height."""
+    h, w = img.shape[:2]
+    if league == "IPL":
+        z = int(w * IPLParser.ZONE)
+        out = [img[: h // 2, :z], img[h // 2:, :z]]
+    else:
+        out = [img[:, :split], img[:, split:]] if split else [img]
+    return [cv2.resize(s, None, fx=f, fy=f, interpolation=cv2.INTER_CUBIC) if (f := 40 / s.shape[0]) > 1.2 else s
+            for s in out]
+
+
+def rec_strip(reader, st, row):
+    res, _ = reader(st, use_det=False, use_cls=False, use_rec=True)
+    return [[w, round(float(c), 3), [0, row * 60]] for t, c in (res or []) if t and c >= 0.5 for w in t.split()]
+
+
+def ocr(reader, img, league, split=None):
+    """Recognition only (RapidOCR / PaddleOCR models on onnxruntime), one call per strip. Tokens keep the old format
+    [text, conf, [x, y]]; the words of a strip share its position (x = 0, y = row * 60)."""
+    return [t for row, st in enumerate(strips(img, league, split)) for t in rec_strip(reader, st, row)]
 
 
 def bar_present(imgs, league):
@@ -131,17 +158,15 @@ def bar_present(imgs, league):
 
 def topup_ocr(job, part, box, out, cache):
     """OCR frames the zone-based presence check finds but the cached pass skipped (cached results stay as they are)."""
-    import multiprocessing as mp, os, time
+    import time
     crops = extract_crops(job, part, box)
     present = bar_present([cv2.imread(str(f)) for f in crops], job.league)
     todo = [k for k in range(len(crops)) if present[k] and not out["frames"][k]["tokens"]]
     t0 = time.time()
     if todo:
-        th = out["preprocess"] == "adaptive"
-        with mp.get_context("spawn").Pool(max(1, (os.cpu_count() or 2) - 1), initializer=_worker_init) as pool:
-            res = pool.map(_ocr_chunk, [([str(crops[k])], [True], th, 0) for k in todo], chunksize=1)
-        for k, r in zip(todo, res):
-            out["frames"][k]["tokens"] = r[0][0]
+        split = strip_split(crops, job.league)
+        for k in todo:
+            out["frames"][k]["tokens"] = ocr_frames([str(crops[k])], [True], job.league, 0, split)[0][0]
     out["topup"] = {"frames": len(todo), "seconds": round(time.time() - t0)}
     out["bar_on_screen"] = round(sum(present) / len(present), 3)
     print(f"  top-up OCR: {len(todo)} frames the first pass skipped, {time.time() - t0:.0f} s", flush=True)
@@ -159,38 +184,20 @@ def run_ocr(job, part, box, parser, reocr):
     crops = extract_crops(job, part, box)
     imgs = [cv2.imread(str(f)) for f in crops]
     present = bar_present(imgs, job.league)
-    # OCR in parallel worker processes (one thread each; all cores). The README's adaptive threshold first; its success
-    # rate on a 100-frame sample of bar-on-screen frames decides whether to redo with plain gray (Tesseract isn't
-    # installed; easyocr's second mode is the fallback).
-    import multiprocessing as mp, os, time
-    max_reuse = 20 if job.league == "IPL" else 2         # the NFL clock ticks every second
-    nw = max(1, (os.cpu_count() or 2) - 1)
-    bounds = np.linspace(0, len(crops), nw * 3 + 1).astype(int)
-    rng = random.Random(0)
-    on = [k for k in range(len(imgs)) if present[k]]
-    sample = sorted(rng.sample(on, min(100, len(on))))
-    rates = {}
-    with mp.get_context("spawn").Pool(nw, initializer=_worker_init) as pool:
-        # 1. the README's 100-frame sample, per preprocessing mode (adaptive first; gray only if adaptive < 60%)
-        for th in (True, False):
-            t0 = time.time()
-            res = pool.map(_ocr_chunk, [([str(crops[i])], [True], th, 0) for i in sample], chunksize=1)
-            ok = sum(parser(r[0][0]) is not None for r in res)
-            rates["adaptive" if th else "gray"] = round(ok / len(sample), 3)
-            print(f"  sample ({'adaptive' if th else 'gray'}): {ok / len(sample):.0%} parsed, {time.time() - t0:.0f} s", flush=True)
-            if ok / len(sample) >= 0.6:
-                break
-        th = rates["adaptive"] >= rates.get("gray", 0)
-        # 2. one full pass with the better mode
-        t0 = time.time()
-        tasks = [([str(f) for f in crops[a:b]], present[a:b], th, max_reuse) for a, b in zip(bounds, bounds[1:]) if b > a]
-        res = pool.map(_ocr_chunk, tasks, chunksize=1)
-    toks = [t for r in res for t in r[0]]
-    n_ocr = sum(r[1] for r in res)
-    print(f"  full pass ({'adaptive' if th else 'gray'}): {n_ocr} OCR calls on {nw} workers in {time.time() - t0:.0f} s", flush=True)
-    out = {"engine": "easyocr", "preprocess": "adaptive" if th else "gray", "sample_rates": rates,
-           "bar_on_screen": round(sum(present) / len(present), 3), "ocr_calls": n_ocr, "topup": {"frames": 0},
-           "frames": [{"t": round(k / FPS_OCR, 2), "tokens": toks[k]} for k in range(len(crops))]}
+    import time
+    max_reuse = 20
+    t0 = time.time()
+    split = strip_split(crops, job.league)
+    toks, n_ocr = ocr_frames([str(f) for f in crops], present, job.league, max_reuse, split)
+    res = [(toks, n_ocr)]
+    nw = 1
+    secs = time.time() - t0
+    on = [k for k in range(len(crops)) if present[k]]
+    rate = sum(parser(toks[k]) is not None for k in on) / max(1, len(on))
+    print(f"  OCR: {n_ocr} strip reads in {secs:.0f} s; {rate:.0%} of bar frames parsed", flush=True)
+    out = {"engine": "rapidocr-rec", "preprocess": "strips", "sample_rates": {"strips": round(rate, 3)},
+           "bar_on_screen": round(sum(present) / len(present), 3), "ocr_calls": n_ocr, "seconds": round(secs),
+           "topup": {"frames": 0}, "frames": [{"t": round(k / FPS_OCR, 2), "tokens": toks[k]} for k in range(len(crops))]}
     cache.write_text(json.dumps(out))
     return out
 
@@ -198,26 +205,39 @@ def run_ocr(job, part, box, parser, reocr):
 _READER = None
 
 
-def _worker_init():
+def _worker_init(threads=1):
     global _READER
-    import torch, easyocr
-    torch.set_num_threads(1)
-    _READER = easyocr.Reader(["en"], gpu=False, verbose=False)
+    from rapidocr_onnxruntime import RapidOCR
+    _READER = RapidOCR(**({"intra_op_num_threads": threads, "inter_op_num_threads": 1} if threads else {}))
+
+
+def ocr_frames(paths, present, league, max_reuse, split=None):
+    """OCR in this process with onnxruntime's own multi-threading. On this laptop one process using all cores
+    (~40 ms a strip) beats a pool of single-thread workers (~70-100 ms a strip overall): the cores can't all run flat
+    out at once, so extra processes only fight."""
+    if _READER is None:
+        _worker_init(threads=None)
+    return _ocr_chunk((paths, present, league, max_reuse, split))
 
 
 def _ocr_chunk(task):
-    """One contiguous run of crops: skip frames without the bar, reuse the reading while the bar is unchanged."""
-    paths, present, th, max_reuse = task
-    out, last, n = [], None, 0
+    """One contiguous run of crops: skip frames without the bar; per strip, reuse the last reading while that strip
+    is unchanged (the scores rarely change, the clock every second), so only what changed is recognised."""
+    paths, present, league, max_reuse = task[:4]
+    split = task[4] if len(task) > 4 else None
+    out, last, n = [], {}, 0
     for k, p in enumerate(paths):
         if not present[k]:
             out.append([]); continue
-        img = cv2.imread(p)
-        g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY).astype(np.int16)
-        if last is not None and k - last[0] <= max_reuse and (np.abs(g - last[2]) > 40).mean() < 0.004:
-            out.append(last[1]); continue
-        toks = ocr(_READER, img, th); n += 1
-        last = (k, toks, g)
+        toks = []
+        for row, st in enumerate(strips(cv2.imread(p), league, split)):
+            g = cv2.cvtColor(st, cv2.COLOR_BGR2GRAY).astype(np.int16)
+            prev = last.get(row)
+            if prev is not None and k - prev[0] <= max(max_reuse, 20 if row == 0 and split else 0)                     and prev[2].shape == g.shape and (np.abs(g - prev[2]) > 40).mean() < STRIP_SAME:
+                toks += prev[1]; continue
+            t = rec_strip(_READER, st, row); n += 1
+            last[row] = (k, t, g)
+            toks += t
         out.append(toks)
     return out, n
 
@@ -244,56 +264,69 @@ class IPLParser:
         self.eventful = {e["step"] for e in sister.events(gid) if e["wicket"] or e["six"] or e["four"]}
 
     def raw(self, tokens):
+        """All plausible readings of the bar: [{inn, r, w, b, text}]. A recogniser without word detection glues the
+        fields ('GT51-39.1' = 51-3 after 9.1 overs; 'LSG70-813' = 70-8 after 13), so every split of the digits after
+        the dash that makes cricket sense is a candidate; the scoreboard match picks one."""
         if self.zone_px:
             tokens = [t for t in (tokens or []) if t[2][0] < self.zone_px]
         if not tokens:
-            return None
+            return []
         words = [t[0].upper().strip() for t in tokens]
         txt = " ".join(words)
         txt0 = txt.replace("O", "0")
-        m = re.search(r"(?<![\d.])(\d{1,3})\s*[-/]\s*(\d{1,2})(?![\d.])", txt0)
+        m = re.search(r"(?<![\d.])(\d{1,3})\s*[-/]\s*(\d)", txt0)
         if not m:
-            return None
-        runs, wk = int(m.group(1)), int(m.group(2))
-        rest = txt0[m.end():]
-        o = re.search(r"(?<!\d)(\d{1,2})\s*[.,]\s*([0-5])(?!\d)", rest) or re.search(r"(?<!\d)(\d{1,2})\s*[.,]\s*([0-5])(?!\d)", txt0)
-        if o:
-            ov, bl = int(o.group(1)), int(o.group(2))
-        else:   # the bar shows a completed over as a bare "6", right after the score
-            o = re.match(r"\s*(\d{1,2})(?![\d.,-])", rest)
-            if o:
-                ov, bl = int(o.group(1)), 0
-            elif runs == 0 and wk == 0:                    # "LSG 0-0 v GT TARGET 145": innings not started
-                ov, bl = 0, 0
-            else:
-                return None
-        if wk > 10 or ov > 20:
-            return None
-        legal = ov * 6 + bl
+            return []
+        runs = int(m.group(1))
         head = txt[:m.start()]
         inn = None
-        if self.second in head.split() or "TARGET" in txt or "NEED" in txt:
+        if self.second in head.split() or head.endswith(self.second) or "TARGET" in txt or "NEED" in txt:
             inn = 2
-        elif self.first in head.split():
+        elif self.first in head.split() or head.endswith(self.first):
             inn = 1
-        return {"inn": inn, "r": runs, "w": wk, "b": legal, "text": txt}
+        tail = re.match(r"[\d\s.,]*", txt0[m.start(2):]).group(0).rstrip()
+        cands = []
+        parts = tail.split()
+        splits = []
+        if len(parts) >= 2:                                   # spaced: wickets, then overs
+            splits.append((parts[0], "".join(parts[1:2])))
+        glued = tail.replace(" ", "")
+        for k in (1, 2):
+            splits.append((glued[:k], glued[k:]))
+        for wk_s, ov_s in splits:
+            if not wk_s.isdigit() or int(wk_s) > 10 or (len(wk_s) == 2 and wk_s[0] == "0"):
+                continue
+            o = re.fullmatch(r"(\d{1,2})(?:[.,]([0-5]))?", ov_s)
+            if o and not (len(o.group(1)) == 2 and o.group(1)[0] == "0") and int(o.group(1)) <= 20:
+                ov, bl = int(o.group(1)), int(o.group(2) or 0)
+            elif ov_s == "" and runs == 0 and int(wk_s) == 0:  # 'LSG 0-0 v GT TARGET 145': innings not started
+                ov, bl = 0, 0
+            else:
+                continue
+            cands.append({"inn": inn, "r": runs, "w": int(wk_s), "b": ov * 6 + bl, "text": txt})
+        if not cands:                                         # older OCR: overs elsewhere in the zone ('30-2 P 5.2')
+            mw = re.match(r"(\d{1,2})(?![\d.])", txt0[m.start(2):])
+            o = re.search(r"(?<!\d)(\d{1,2})\s*[.,]\s*([0-5])(?!\d)", txt0[m.end():])
+            if mw and o and int(mw.group(1)) <= 10 and int(o.group(1)) <= 20:
+                cands.append({"inn": inn, "r": runs, "w": int(mw.group(1)), "b": int(o.group(1)) * 6 + int(o.group(2)),
+                              "text": txt})
+        return cands
 
     def __call__(self, tokens):
-        rd = self.raw(tokens)
-        if rd is None:
-            return None
-        best, bc = None, 1e9
-        for s, (i, r, w, b) in enumerate(self.states):
-            if rd["inn"] is not None and i != rd["inn"]:
-                continue
-            c = abs(r - rd["r"]) + 6 * abs(w - rd["w"]) + 0.3 * abs(b - rd["b"])   # overs are the smallest digits: trust them least
-            if c < bc:
-                best, bc = s, c
+        best, bc, brd = None, 1e9, None
+        for rd in self.raw(tokens):
+            for s, (i, r, w, b) in enumerate(self.states):
+                if rd["inn"] is not None and i != rd["inn"]:
+                    continue
+                c = abs(r - rd["r"]) + 6 * abs(w - rd["w"]) + 0.3 * abs(b - rd["b"])   # overs: the smallest digits
+                if c < bc:
+                    best, bc, brd = s, c, rd
         if best is None or bc > 6:
             return None
         if best == len(self.states) - 1:
             best = self.brk - 1
         i, r, w, b = self.states[best]
+        rd = brd
         return {"state": best, "cost": round(bc, 2), "read": f"{rd['r']}-{rd['w']} {rd['b'] // 6}.{rd['b'] % 6}",
                 "label": f"inn{i} {r}/{w} {b // 6}.{b % 6}"}
 
@@ -336,6 +369,15 @@ class NFLParser:
             if m and int(m.group(1)) <= 15 and int(m.group(2)) <= 59:
                 mm, ss = int(m.group(1)), int(m.group(2))
                 break
+        if mm is None:                             # glued: the last m:ss anywhere in the line
+            g = re.findall(r"(?<![\d])([\dO]{1,2})[:.]([\dO]{2})", txt)          # 'O:52' = 0:52
+            g = [(int(a.replace("O", "0")), int(b.replace("O", "0"))) for a, b in g]
+            g = [(a, b) for a, b in g if a <= 15 and b <= 59]
+            if not g:                              # colon lost: three digits right after the quarter ('4TH 332' = 3:32)
+                g = [(int(a), int(b)) for a, b in re.findall(r"(?:1ST|2ND|3RD|4TH)\s*(\d)(\d{2})(?!\d)", txt)
+                     if int(b) <= 59]
+            if g:
+                mm, ss = g[-1]
         if mm is None:
             return None
         q = None                                   # the quarter is an ordinal standing alone (not a down "1ST & 10")
@@ -348,9 +390,13 @@ class NFLParser:
                 for a, b in zip(parts, parts[1:] + [""]):
                     if a in self.ORD and not b.startswith("&"):
                         q = self.ORD[a]
+        qm = list(re.finditer(r"(1ST|2ND|3RD|4TH)(?!\s*&)", txt))   # an ordinal that isn't a down
+        if q is None and qm:                       # glued line ('BUF73RD8:04' = away 7, 3RD): the last such ordinal
+            q = self.ORD[qm[-1].group(1)]
+        head = txt[: qm[-1].start()] if qm else txt                 # the scores sit before the quarter
         dn = re.search(r"(1ST|2ND|3RD|4TH)\s*&\s*(\d{1,2}|G[O0]AL)", txt)
-        hs = re.search(rf"\b{self.home}\s*(\d{{1,2}})\b", txt)
-        as_ = re.search(rf"\b{self.away}\s*(\d{{1,2}})\b", txt)
+        hs = re.search(rf"{self.home}\s*(\d{{1,2}})(?!\d)", head)
+        as_ = re.search(rf"{self.away}\s*(\d{{1,2}})(?!\d)", head)
         return {"q": q, "c": mm * 60 + ss, "down": self.ORD.get(dn.group(1)) if dn else None,
                 "togo": (0 if dn.group(2).startswith("G") else int(dn.group(2))) if dn else None,
                 "h": int(hs.group(1)) if hs else None, "a": int(as_.group(1)) if as_ else None, "text": txt}
@@ -367,17 +413,17 @@ class NFLParser:
             if dc >= 0:
                 c = dc / 15.0                  # play p in progress (its clock runs down from its snap)
                 if dc > 12:                    # no play runs this long: more likely the next play's pre-snap clock
-                    c += 0.1 * (dc - 12)
-            elif dc >= -40 and rd["down"] is not None and self.down[p] == rd["down"] and self.togo[p] == rd["togo"]:
-                c = -dc / 15.0 + 0.3           # clock running before play p's snap: the bug already shows p's down
-            elif dc >= -40 and rd["down"] is None:
-                c = -dc / 15.0 + 0.8           # same, but the down wasn't legible
+                    c += 0.2 * (dc - 12)
+            elif dc >= -40 and (p == 0 or self.sb["q"][p - 1] != rd["q"] or rd["c"] <= self.sb["c"][p - 1]):
+                # clock running before play p's snap; it can't read more than the previous play's snap clock
+                match = rd["down"] is not None and self.down[p] == rd["down"] and self.togo[p] == rd["togo"]
+                c = -dc / 15.0 + (0.3 if match else 0.5)   # a stale down (the bug updates it late) costs a little
             else:
                 continue
             if rd["h"] is not None and rd["h"] != self.sb["h"][p]:
-                c += 2
+                c += 1.0                       # the bug updates the score late after a TD
             if rd["a"] is not None and rd["a"] != self.sb["a"][p]:
-                c += 2
+                c += 1.0                       # the bug updates the score late after a TD
             if rd["down"] is not None and self.down[p] and (rd["down"] != self.down[p] or rd["togo"] != self.togo[p]):
                 c += 1.0
             if self.minor[p]:

@@ -1,0 +1,12 @@
+# python 3.11; ffmpeg/ffprobe on PATH; node (only for the page-time check in align.py)
+numpy
+pandas
+pyarrow
+pyyaml
+scipy
+librosa
+matplotlib
+opencv-python
+scenedetect[opencv]
+rapidocr-onnxruntime   # scoreboard OCR (recognition only, on fixed strips of the bar)
+yt-dlp                 # full-game replays (scripts/fetch_replay.py)

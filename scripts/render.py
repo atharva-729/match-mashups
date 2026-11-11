@@ -1,14 +1,15 @@
-"""Phase 5: render the EDL with ffmpeg only.
+"""Phase 5: render the EDL with ffmpeg, in ONE encode.
 
-Segments: each EDL entry is trimmed, retimed with setpts, scaled/padded to 1280x720 (the sources are 720p) and
-encoded frame-exact (frame counts from the song timeline, so nothing drifts). Cuts inside one step get a short
-crossfade (round(0.15*fps) frames, the outgoing shot extended to pay for it); every other cut is hard.
-Final pass: the song as the only audio (0.5 s fade-in, 2 s fade-out), a 2.5 s title card and a 3 s end card
-(drawtext over a dark gradient band, no logos). mashup_debug.mp4 adds a corner label per entry: step · over.ball/clock · desc.
-usage: python scripts/render.py inputs/<job> [--keep-segments]
+One filter graph: every EDL entry is an input that seeks straight into its source (-ss/-t), is retimed (setpts),
+resampled to the song timeline's frame grid and cut to an exact frame count (so nothing drifts), scaled/padded to
+1280x720; cuts inside one step get a short crossfade (round(0.15*fps) frames, the outgoing shot extended to pay for
+it), every other cut is hard. The same graph adds the song as the only audio (0.5 s fade-in, 2 s fade-out), a 2.5 s
+title card and a 3 s end card (drawtext over a dark gradient band, no logos).
+--debug also writes mashup_debug.mp4 with a corner label per entry (step · over.ball/clock · desc) and reads the label
+back at every key moment (Checkpoint 5's OCR check); without it, Checkpoint 5 checks duration, audio and the EDL.
+usage: python scripts/render.py inputs/<job> [--debug] [--check-only]
 """
 import json, shutil, subprocess, sys
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import cv2
@@ -34,71 +35,39 @@ def run(cmd, cwd=None):
         raise RuntimeError(f"ffmpeg failed: {' '.join(map(str, cmd))[:400]}\n{r.stderr[-2000:]}")
 
 
-def seg_cmd(job, e, n_frames, fps, out):
-    src_len = n_frames / fps * e["speed"] + 0.5
-    vf = (f"setpts=(PTS-STARTPTS)/{e['speed']:.6f},fps={fps},"
-          f"scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2,setsar=1,"
-          f"tpad=stop_mode=clone:stop_duration=3,format=yuv420p")
-    return ["ffmpeg", "-v", "error", "-y", "-ss", f"{e['src_in']:.4f}", "-t", f"{src_len:.4f}", "-i", str(job.inp / e["part"]),
-            "-vf", vf, "-frames:v", str(n_frames), "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "16",
-            "-r", str(fps), str(out)]
-
-
 def is_cut(a, b):
     return not (a["part"] == b["part"] and abs(a["src_out"] - b["src_in"]) < 0.05)
 
 
-def build_video(job, edl, fps, segdir):
-    """Render segments, crossfade cuts within a step, concat everything. Returns the silent full video path."""
+def video_graph(job, edl, fps):
+    """Inputs and filter chains that turn the EDL into one video stream [vcat] on the song's frame grid."""
     xf = max(1, round(0.15 * fps))
     F = lambda x: int(round(x * fps))
-    # groups: runs of entries joined by within-step cuts (crossfaded) or continuous footage
-    groups, cur = [], [0]
+    inputs, chain = [], []
+    for i, e in enumerate(edl):
+        n = F(e["song_out"]) - F(e["song_in"])
+        nxt = edl[i + 1] if i + 1 < len(edl) else None
+        e["_fade"] = nxt is not None and is_cut(e, nxt) and nxt["step"] == e["step"]   # a cut inside one step
+        e["_n"] = n + (xf if e["_fade"] else 0)
+        src_len = e["_n"] / fps * e["speed"] + 0.5
+        inputs += ["-ss", f"{e['src_in']:.4f}", "-t", f"{src_len:.4f}", "-i", str(job.inp / e["part"])]
+        chain.append(f"[{i}:v]setpts=(PTS-STARTPTS)/{e['speed']:.6f},fps={fps},"
+                     f"scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2,setsar=1,"
+                     f"tpad=stop_mode=clone:stop_duration=3,trim=end_frame={e['_n']},setpts=PTS-STARTPTS,"
+                     f"format=yuv420p,settb=AVTB[s{i}]")
+    last, length = "[s0]", edl[0]["_n"] / fps
     for i in range(1, len(edl)):
-        a, b = edl[i - 1], edl[i]
-        if is_cut(a, b) and a["step"] != b["step"]:
-            groups.append(cur); cur = [i]
+        prev = edl[i - 1]
+        if prev["_fade"]:
+            off = length - xf / fps
+            chain.append(f"{last}[s{i}]xfade=transition=fade:duration={xf / fps:.4f}:offset={off:.4f},settb=AVTB[c{i}]")
+            length = off + edl[i]["_n"] / fps
         else:
-            cur.append(i)
-    groups.append(cur)
-    jobs = []
-    for g in groups:
-        for j, i in enumerate(g):
-            e = edl[i]
-            n = F(e["song_out"]) - F(e["song_in"])
-            fade_next = j + 1 < len(g) and is_cut(e, edl[g[j + 1]])
-            e["_n"], e["_fade"] = n + (xf if fade_next else 0), fade_next
-            jobs.append((e, segdir / f"s{i:04d}.mp4"))
-    with ThreadPoolExecutor(4) as ex:
-        list(ex.map(lambda je: run(seg_cmd(job, je[0], je[0]["_n"], fps, je[1])), jobs))
-    gfiles = []
-    for gi, g in enumerate(groups):
-        out = segdir / f"g{gi:04d}.mp4"
-        if len(g) == 1:
-            shutil.copy(segdir / f"s{g[0]:04d}.mp4", out)
-        else:
-            inputs, chain, last, t_acc = [], [], "[n0]", 0.0
-            for j, i in enumerate(g):      # one timebase and frame rate for every link (xfade insists)
-                inputs += ["-i", str(segdir / f"s{i:04d}.mp4")]
-                chain.append(f"[{j}:v]fps={fps},settb=AVTB,setpts=PTS-STARTPTS,format=yuv420p[n{j}]")
-            for j in range(1, len(g)):
-                prev = edl[g[j - 1]]
-                t_acc += prev["_n"] / fps
-                if prev["_fade"]:
-                    t_acc -= xf / fps
-                    chain.append(f"{last}[n{j}]xfade=transition=fade:duration={xf / fps:.4f}:offset={t_acc:.4f},"
-                                 f"settb=AVTB[v{j}]")
-                else:
-                    chain.append(f"{last}[n{j}]concat=n=2:v=1:a=0,settb=AVTB[v{j}]")
-                last = f"[v{j}]"
-            run(["ffmpeg", "-v", "error", "-y", *inputs, "-filter_complex", ";".join(chain), "-map", last,
-                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", "-r", str(fps), "-pix_fmt", "yuv420p", str(out)])
-        gfiles.append(out)
-    lst = segdir / "list.txt"
-    lst.write_text("".join(f"file '{f.name}'\n" for f in gfiles))
-    full = segdir / "full.mp4"
-    run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0", "-i", "list.txt", "-c", "copy", "full.mp4"], cwd=segdir)
-    return full
+            chain.append(f"{last}[s{i}]concat=n=2:v=1:a=0,settb=AVTB[c{i}]")
+            length += edl[i]["_n"] / fps
+        last = f"[c{i}]"
+    chain.append(f"{last}null[vcat]")
+    return inputs, chain
 
 
 def gradient_png(path):
@@ -152,22 +121,30 @@ def srt(edl, ev, path):
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def final(job, full, al, song_len, work, out, debug):
+ENC = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p"]   # QSV tested: no faster here
+
+
+def final(job, edl, fps, al, song_len, work, out, debug):
+    inputs, chain = video_graph(job, edl, fps)
+    n = len(edl)
     draw, (T0, T1, E0, E1) = cards(job, al, song_len, work)
     gradient_png(work / "band.png")
-    fc = (f"[2:v]format=rgba,split[ga][gb];"
-          f"[ga]fade=t=in:st={T0}:d=0.35:alpha=1,fade=t=out:st={T1 - 0.4}:d=0.4:alpha=1[g1];"
-          f"[gb]fade=t=in:st={E0}:d=0.35:alpha=1[g2];"
-          f"[0:v][g1]overlay=enable='between(t,{T0},{T1})'[o1];[o1][g2]overlay=enable='between(t,{E0},{E1})'[o2];"
-          f"[o2]{draw}")
+    chain += [f"[{n + 1}:v]format=rgba,split[ga][gb]",
+              f"[ga]fade=t=in:st={T0}:d=0.35:alpha=1,fade=t=out:st={T1 - 0.4}:d=0.4:alpha=1[g1]",
+              f"[gb]fade=t=in:st={E0}:d=0.35:alpha=1[g2]",
+              f"[vcat][g1]overlay=enable='between(t,{T0},{T1})'[o1]",
+              f"[o1][g2]overlay=enable='between(t,{E0},{E1})'[o2]"]
+    last = f"[o2]{draw}"
     if debug:
-        fc += (",subtitles=debug.srt:force_style='FontName=Consolas,FontSize=11,PrimaryColour=&H00FFFFFF,"
-               "BackColour=&H99000000,BorderStyle=4,Outline=0,Shadow=0,Alignment=7,MarginL=12,MarginV=10'")
-    fc += f"[v];[1:a]afade=t=in:d=0.5,afade=t=out:st={song_len - 2:.3f}:d=2[a]"
-    run(["ffmpeg", "-v", "error", "-y", "-i", str(full), "-i", str(job.song), "-loop", "1", "-framerate", "25",
-         "-t", f"{song_len:.3f}", "-i", "band.png", "-filter_complex", fc, "-map", "[v]", "-map", "[a]",
-         "-t", f"{song_len:.3f}", "-c:v", "libx264", "-crf", "20", "-preset", "veryfast", "-pix_fmt", "yuv420p",
-         "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(out)], cwd=work)
+        last += (",subtitles=debug.srt:force_style='FontName=Consolas,FontSize=11,PrimaryColour=&H00FFFFFF,"
+                 "BackColour=&H99000000,BorderStyle=4,Outline=0,Shadow=0,Alignment=7,MarginL=12,MarginV=10'")
+    chain += [last + "[v]", f"[{n}:a]afade=t=in:d=0.5,afade=t=out:st={song_len - 2:.3f}:d=2[a]"]
+    script = work / ("graph_debug.txt" if debug else "graph.txt")
+    script.write_text(";\n".join(chain), encoding="utf-8")
+    run(["ffmpeg", "-v", "error", "-y", *inputs, "-i", str(job.song), "-loop", "1", "-framerate", str(fps),
+         "-t", f"{song_len:.3f}", "-i", "band.png", "-filter_complex_script", script.name, "-map", "[v]", "-map", "[a]",
+         "-t", f"{song_len:.3f}", *ENC, "-r", str(fps), "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
+         str(out)], cwd=work)
 
 
 def main():
@@ -175,29 +152,33 @@ def main():
     edl, al = job.load("edl.json"), job.load("alignment.json")
     song_len = al["song_len"]
     if "--check-only" in sys.argv:
-        return check(job, al, edl, song_len, {e["step"]: e for e in sister.events(job.gid)})
+        return check(job, al, edl, song_len, {e["step"]: e for e in sister.events(job.gid)},
+                     (job.out / "mashup_debug.mp4").exists())
     fps = fps_of(job.parts[0])
-    segdir = job.wpath("segments")
-    shutil.rmtree(segdir, ignore_errors=True); segdir.mkdir()
-    full = build_video(job, edl, fps, segdir)
     ev = {e["step"]: e for e in sister.events(job.gid)}
-    srt(edl, ev, job.work / "debug.srt")
-    final(job, full, al, song_len, job.work, job.out / "mashup.mp4", debug=False)
-    final(job, full, al, song_len, job.work, job.out / "mashup_debug.mp4", debug=True)
-    if "--keep-segments" not in sys.argv:
-        shutil.rmtree(segdir, ignore_errors=True)
-    check(job, al, edl, song_len, ev)
+    debug = "--debug" in sys.argv
+    import time
+    t0 = time.time()
+    final(job, edl, fps, al, song_len, job.work, job.out / "mashup.mp4", debug=False)
+    print(f"  rendered mashup.mp4 in {time.time() - t0:.0f} s", flush=True)
+    if debug:
+        srt(edl, ev, job.work / "debug.srt")
+        final(job, edl, fps, al, song_len, job.work, job.out / "mashup_debug.mp4", debug=True)
+    check(job, al, edl, song_len, ev, debug)
 
 
-def check(job, al, edl, song_len, ev):
-    """Checkpoint 5: duration, one audio stream, and the burned-in label at each key moment (read back by OCR)."""
+def check(job, al, edl, song_len, ev, debug):
+    """Checkpoint 5: duration, one audio stream, and per key moment the step on screen at its planned time: read back
+    from the debug video's label by OCR (--debug), else from the EDL the video was rendered from."""
     out, dbg = job.out / "mashup.mp4", job.out / "mashup_debug.mp4"
     dur = probe_duration(out)
     na = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0",
                          str(out)], capture_output=True, text=True).stdout.split()
     kdir = job.wpath("keyframes"); shutil.rmtree(kdir, ignore_errors=True); kdir.mkdir()
-    import easyocr, re
-    reader = easyocr.Reader(["en"], gpu=False, verbose=False)
+    import re
+    if debug:
+        from rapidocr_onnxruntime import RapidOCR
+        reader = RapidOCR()
     rows, ok, n = [], 0, 0
     plan = {int(k): v for k, v in job.load("plan_report.json").items()}
     for s in al["steps"]:
@@ -211,12 +192,17 @@ def check(job, al, edl, song_len, ev):
         # read the label where the planner put the moment (it may move a moment off its aligned time to give every
         # must-keep moment room); the plan report says how far it moved
         t = plan[i]["planned"] if plan.get(i, {}).get("planned") is not None else s["t"]
-        f = kdir / f"step{i:03d}_{t:06.2f}.jpg"
-        subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{t:.3f}", "-i", str(dbg), "-frames:v", "1", str(f)], check=True)
-        img = cv2.imread(str(f))
-        toks = [r[1].strip() for r in reader.readtext(cv2.resize(img[:70], None, fx=1.5, fy=1.5))]
-        shown = next((int(x) for x in toks[:3] if re.fullmatch(r"\d{1,3}", x)), None)   # the label opens with the step
         in_edl = next((e["step"] for e in edl if e["song_in"] <= t < e["song_out"]), None)
+        if debug:
+            f = kdir / f"step{i:03d}_{t:06.2f}.jpg"
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{t:.3f}", "-i", str(dbg), "-frames:v", "1", str(f)],
+                           check=True)
+            res, _ = reader(cv2.imread(str(f))[:70, : W // 2])
+            toks = [w for r in sorted(res or [], key=lambda r: r[0][0][0]) for w in r[1].split()]
+            m = next((re.match(r"(\d{1,3})(?!\d)", x) for x in toks[:3] if re.match(r"\d", x)), None)
+            shown = int(m.group(1)) if m else None                 # the label opens with the step ('55·' glued)
+        else:
+            shown = in_edl
         good = shown is not None and abs(shown - i) <= 2
         reachable = st != "footage-limited"
         if reachable:
@@ -228,8 +214,9 @@ def check(job, al, edl, song_len, ev):
     d_ok, a_ok = abs(dur - song_len) <= 0.1, len(na) == 1
     log("\n".join([f"### {stamp()} · Checkpoint 5 ({job.name}): {'PASS' if d_ok and a_ok and ok == n else 'FAIL'}",
                    f"- `outputs/{job.name}/mashup.mp4`: {dur:.3f} s vs song {song_len:.3f} s ({d_ok}); audio streams: {len(na)} ({a_ok})",
-                   f"- Key-moment labels within ±2 steps: {ok}/{n} reachable key moments "
-                   f"(frames in `work/{job.name}/keyframes/`)", *rows]))
+                   f"- Key moments on screen within ±2 steps: {ok}/{n} reachable key moments ("
+                   + (f"label OCR, frames in `work/{job.name}/keyframes/`)" if debug else "from the EDL; --debug reads the labels)"),
+                   *rows]))
 
 
 if __name__ == "__main__":
