@@ -208,7 +208,9 @@ def check(job, al, edl, song_len, ev):
         if st == "not in footage":
             rows.append(f"  - step {i} ({ev[i]['label']}): n/a, not in the highlight footage")
             continue
-        t = s["t"]
+        # read the label where the planner put the moment (it may move a moment off its aligned time to give every
+        # must-keep moment room); the plan report says how far it moved
+        t = plan[i]["planned"] if plan.get(i, {}).get("planned") is not None else s["t"]
         f = kdir / f"step{i:03d}_{t:06.2f}.jpg"
         subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{t:.3f}", "-i", str(dbg), "-frames:v", "1", str(f)], check=True)
         img = cv2.imread(str(f))
@@ -221,7 +223,7 @@ def check(job, al, edl, song_len, ev):
             n += 1; ok += good
         why = "" if reachable else (f" (footage-limited: the highlights can't reach this song time; it plays at "
                                     f"{mmss(plan[i]['planned'])})" if plan[i]["planned"] is not None else " (footage-limited)")
-        rows.append(f"  - step {i} ({ev[i]['label']}, {'+'.join(s['why'])}) at {mmss(t)}: label reads {shown} "
+        rows.append(f"  - step {i} ({ev[i]['label']}, {'+'.join(s['why'])}) at {mmss(t)} (aligned {mmss(s['t'])}): label reads {shown} "
                     f"(EDL says {in_edl}) {'PASS' if good else 'FAIL'}{why}")
     d_ok, a_ok = abs(dur - song_len) <= 0.1, len(na) == 1
     log("\n".join([f"### {stamp()} · Checkpoint 5 ({job.name}): {'PASS' if d_ok and a_ok and ok == n else 'FAIL'}",

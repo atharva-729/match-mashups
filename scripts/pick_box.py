@@ -136,7 +136,7 @@ def main():
             continue
         job.save("box.json", boxes)
         log(f"### {stamp()} · Checkpoint 2 ({job.name}): PASS\n- Box for {part.name}: {boxes[part.name]['box']} "
-            f"(x, y, w, h) · confirmed by Atharva: {boxes[part.name]['confirmed']}")
+            f"(x, y, w, h) · confirmed: {boxes[part.name]['confirmed']}")
 
 
 if __name__ == "__main__":

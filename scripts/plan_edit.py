@@ -23,7 +23,17 @@ from scipy.optimize import minimize
 from common import job_from_argv, log, mmss, stamp
 
 MIN_GAP, MIN_GAP_KEY = 0.9, 0.6
-VMIN, VMIN_KEY_REPLAY, VMAX = 0.8, 0.75, 2.5
+VMIN, VMIN_KEY_REPLAY = 0.8, 0.75
+# speed caps: (normal, emergency). The emergency caps are used only when a stretch cannot show its must-keep moments
+# (every wicket / TD / turnover with its delivery and result) at the normal caps.
+CAP = {"key": (1.0, 1.25), "live": (1.25, 1.5), "other": (1.25, 1.75)}
+VMAX = CAP["other"][1]
+MUST = {"IPL": ("wicket", "six"), "NFL": ("td", "turnover", "fg")}
+HIGH = {"IPL": ("swing", "moment"), "NFL": ("swing", "moment")}
+HIT_WINDOW = 1.5    # how far a key moment may move to land on a strong hit
+END_HOLD = 4.0      # the last moment lands at least this long before the song ends (its result plays out)
+# the core of a key moment that must be shown: before its event point / after it (seconds of source)
+CORE = {"IPL": (1.2, {"must": 3.5, "high": 3.0}), "NFL": (4.0, {"must": 2.0, "high": 1.5})}
 
 
 class Source:
@@ -64,14 +74,20 @@ def main():
     song_len = al["song_len"]
     beats = np.array(al["beats"])
     hits = np.array(sorted(set(al["beats"]) | set(al["onsets"])))
-    key_steps = {s["i"] for s in steps if s["is_key"]}
+    tier = {}
+    for st in steps:
+        if any(w in MUST[L] for w in st["why"]):
+            tier[st["i"]] = "must"
+        elif any(w in HIGH[L] for w in st["why"]):
+            tier[st["i"]] = "high"
+    key_steps = set(tier)
     src = Source(clips)
 
     # ---- units: one per step with live footage (its consecutive live shots) ----
     units, seen = [], set()
     for k, c in enumerate(src.c):
         s = c["step"]
-        if c["kind"] != "live" or s in seen or s is None or not 0 < s < len(steps):
+        if c["kind"] != "live" or s in seen or s is None or not 0 < s < len(steps) or s not in key_steps:
             continue
         seen.add(s)
         grp = [k]
@@ -85,7 +101,13 @@ def main():
                 E = c["u0"] + min(4.0, 0.5 * (c["u1"] - c["u0"]))
         else:            # the delivery
             E = c["u0"] + (c["event_t"] - c["start"])
-        units.append({"step": s, "k": src.at(E), "E": E, "e": float(t[s]), "key": s in key_steps, "low": ten[s] < low_thr})
+        # how much of the moment's own footage exists either side of its event point (for the minimum spacing)
+        own = [j for j in range(len(src.c)) if src.c[j]["step"] == s and src.c[j]["kind"] == "live"]
+        pre_av = E - min(src.c[j]["u0"] for j in own)
+        post_av = max(src.c[j]["u1"] for j in own) - E
+        core_pre, core_post = min(pre_av, CORE[L][0]), min(post_av, CORE[L][1][tier[s]])
+        units.append({"step": s, "k": src.at(E), "E": E, "e": float(t[s]), "key": True, "tier": tier[s],
+                      "low": ten[s] < low_thr, "core": (core_pre, core_post)})
     units.sort(key=lambda u: u["E"])
 
     # 1. merge units that are too close in song time
@@ -96,15 +118,24 @@ def main():
         for a, b in zip(units, units[1:]):
             gap = min(b["e"] - a["e"], b["E"] - a["E"])
             need = MIN_GAP_KEY if (a["key"] and b["key"]) else MIN_GAP
-            if gap < need:
-                lose = min((a, b), key=lambda u: (u["key"], ten[u["step"]]))
+            if gap < need and not (a["tier"] == "must" and b["tier"] == "must"):
+                lose = min((a, b), key=lambda u: (u["tier"] == "must", ten[u["step"]]))
                 units.remove(lose); dropped.append(lose); changed = True
                 break
 
-    # 2. key targets onto the beat / onset
+    # 2. key targets onto the music's strongest percussive hit nearby (drums, timpani, accents): the strongest hit
+    #    within +-1.5 s, preferring nearer ones; else the nearest beat / onset within 0.5 s
+    ph = np.array(al.get("hits", []), float).reshape(-1, 2)
     for u in units:
         u["target"] = u["e"]
-        if u["key"] and len(hits):
+        near = ph[np.abs(ph[:, 0] - u["e"]) <= HIT_WINDOW] if len(ph) else ph
+        if len(near):
+            score = near[:, 1] - 0.15 * np.abs(near[:, 0] - u["e"])
+            best = near[int(np.argmax(score))]
+            if best[1] >= 0.35:
+                u["target"] = float(best[0]); u["hit"] = round(float(best[1]), 2)
+                continue
+        if len(hits):
             h = hits[np.argmin(np.abs(hits - u["e"]))]
             if abs(h - u["e"]) <= 0.5:
                 u["target"] = float(h)
@@ -112,15 +143,16 @@ def main():
     # 3. place
     n = len(units)
     E = np.array([u["E"] for u in units]); tg = np.array([u["target"] for u in units])
-    w = np.array([10.0 if u["key"] else 1.0 for u in units])
+    w = np.array([10.0 if u["tier"] == "must" else 5.0 for u in units])
     cons = []
     for i in range(n - 1):
         cons.append({"type": "ineq", "fun": lambda x, i=i: (E[i + 1] - E[i]) / VMIN - (x[i + 1] - x[i])})
-        cons.append({"type": "ineq", "fun": lambda x, i=i: (x[i + 1] - x[i]) - MIN_GAP_KEY})
+        need = max(MIN_GAP_KEY, (units[i]["core"][1] + units[i + 1]["core"][0]) / CAP["key"][1])
+        cons.append({"type": "ineq", "fun": lambda x, i=i, need=need: (x[i + 1] - x[i]) - need})
     cons.append({"type": "ineq", "fun": lambda x: E[0] / VMIN - x[0]})
-    cons.append({"type": "ineq", "fun": lambda x: x[0] - 0.5})
+    cons.append({"type": "ineq", "fun": lambda x: x[0] - max(0.5, units[0]["core"][0] / CAP["key"][1])})
     cons.append({"type": "ineq", "fun": lambda x: (src.total - E[-1]) / VMIN - (song_len - x[-1])})
-    cons.append({"type": "ineq", "fun": lambda x: song_len - 1.0 - x[-1]})
+    cons.append({"type": "ineq", "fun": lambda x: song_len - END_HOLD - x[-1]})
     res = minimize(lambda x: float(np.sum(w * (x - tg) ** 2)), np.clip(tg, 0.5, song_len - 1), jac=lambda x: 2 * w * (x - tg),
                    constraints=cons, method="SLSQP", options={"maxiter": 500, "ftol": 1e-9})
     ep = np.maximum.accumulate(res.x)
@@ -131,7 +163,7 @@ def main():
     edl = []
     bounds = [(None, 0.0, 0.0)] + [(u, u["place"], u["E"]) for u in units] + [(None, song_len, src.total)]
     for (ua, sa, Ua), (ub, sb, Ub) in zip(bounds, bounds[1:]):
-        edl += fill(src, ua, ub, sa, sb, Ua, Ub, ten, low_thr, key_steps, L)
+        edl += fill(src, ua, ub, sa, sb, Ua, Ub, ten, low_thr, key_steps, L, tier)
 
     # merge contiguous source at equal speed, then 5. snap cuts to beats
     edl = merge(edl)
@@ -149,8 +181,8 @@ def main():
     rep, ok, n_key, limited_n, report = [], 0, 0, 0, {}
     placed = {u["step"]: u for u in units}
     for s in sorted(key_steps):
-        intended = float(t[s])
         u = placed.get(s)
+        intended = float(u["target"]) if u is not None else float(t[s])   # aligned time, moved onto a strong hit
         if u is None:
             if s not in {d["step"] for d in dropped}:
                 rep.append(f"  - step {s} ({steps[s]['label']}, {'+'.join(steps[s]['why'])}): intended {mmss(intended)} · "
@@ -218,7 +250,7 @@ def piece_role(p, src, ua, ub, Ua, Ub):
     return c["kind"]
 
 
-def fill(src, ua, ub, sa, sb, Ua, Ub, ten, low_thr, key_steps, L):
+def fill(src, ua, ub, sa, sb, Ua, Ub, ten, low_thr, key_steps, L, tier):
     S = sb - sa
     if S <= 1e-6:
         return []
@@ -228,18 +260,20 @@ def fill(src, ua, ub, sa, sb, Ua, Ub, ten, low_thr, key_steps, L):
         p["role"] = piece_role(p, src, ua, ub, Ua, Ub)
         p["step"] = c["step"]
         key, low = c["step"] in key_steps, c["step"] is not None and ten[c["step"]] < low_thr
+        p["tier"] = tier.get(c["step"])
         r = p["role"]
-        if r in ("post", "pre", "live"):
-            lo, hi, pref = (VMIN, 1.25, 1.0) if key else ((VMIN, VMAX, 2.0) if low else (VMIN, 2.0, 1.5))
-        elif r == "replay":
-            lo, hi, pref = (VMIN_KEY_REPLAY if key else VMIN), VMAX, 1.6
+        if r in ("post", "pre"):
+            cap, pref = (CAP["key"], 0.95) if key else (CAP["live"], 1.1)
+        elif r == "live":
+            cap, pref = (CAP["key"], 1.0) if key else (CAP["live"], 1.15)
         elif r == "intro":                       # pre-game cold open (only exists before the first live shot)
-            lo, hi, pref = VMIN, VMAX, 1.0
+            cap, pref = CAP["other"], 1.0
         else:
-            lo, hi, pref = VMIN, VMAX, 2.0
-        p.update(lo=lo, hi=hi, pref=pref, key=key, low=low)
+            cap, pref = CAP["other"], 1.2
+        lo = VMIN_KEY_REPLAY if (r == "replay" and key) else VMIN
+        p.update(lo=lo, hi=cap[0], hi2=cap[1], pref=pref, key=key, low=low)
         name = {"post": "after event", "pre": "up to event"}.get(r, r)
-        p["why"] = ("key " if key else ("montage " if low else "")) + name
+        p["why"] = ("key " if key else "") + name
     if sum((p["u1"] - p["u0"]) / p["hi"] for p in pieces) > S:      # too much footage: choose and trim
         pieces = choose(pieces, S, L)
     items = [p for p in pieces if p["u1"] - p["u0"] > 0.05]
@@ -260,64 +294,89 @@ def fill(src, ua, ub, sa, sb, Ua, Ub, ten, low_thr, key_steps, L):
 
 
 def choose(pieces, S, L):
-    """Too much footage for this stretch: keep the follow-through and the run-up, then extras by priority."""
-    # IPL event = the delivery (keep the ball's flight and the reaction after it); NFL event = the play's result
-    # (keep the play itself before it, a little reaction after)
-    cap_post = {True: 5.0, False: 3.5} if L == "IPL" else {True: 3.0, False: 1.5}
-    cap_pre = {True: 3.5, False: 3.0} if L == "IPL" else {True: 6.0, False: 4.0}
-    left = {"post": None, "pre": None}
-    order = []
-    for p in pieces:                                        # post: from a's event forward, up to the cap in total
-        if p["role"] == "post":
-            cap = 2.0 if p["low"] and not p["key"] else cap_post[p["key"]]
-            left["post"] = cap if left["post"] is None else left["post"]
-            ln = min(p["u1"] - p["u0"], left["post"]); left["post"] -= ln
-            p["u1"] = p["u0"] + ln; order.append((0, p))
-    for p in reversed(pieces):                              # pre: back from b's event, up to the cap in total
-        if p["role"] == "pre":
-            left["pre"] = cap_pre[p["key"]] if left["pre"] is None else left["pre"]
-            ln = min(p["u1"] - p["u0"], left["pre"]); left["pre"] -= ln
-            p["u0"] = p["u1"] - ln; order.append((0 if L == "NFL" else 1, p))
+    """Too much footage for this stretch. Priorities:
+      0  the moment on each side: a's result after its event, b's delivery / snap up to its event (always kept;
+         trimmed to their core only if even the emergency speed caps can't fit them)
+      2  the follow-up of a key moment (replays, the batter's name card, the celebration)
+      3  other balls / plays (their own action, from the start of their shot)
+      4  replays and reactions of ordinary balls, filler
+    Pieces are first taken short (capped) in priority order; any room left is then given back as longer pieces,
+    again in priority order, so the stretch is filled with substance rather than slowed down."""
+    core_pre = CORE[L][0]
     for p in pieces:
-        r, ln = p["role"], p["u1"] - p["u0"]
+        p["o0"], p["o1"] = p["u0"], p["u1"]
+        r, ln, key = p["role"], p["u1"] - p["u0"], p["key"]
         if r in ("post", "pre"):
-            continue
-        if r == "live" and p["key"]:                        # a key play merged into a neighbour: still show it
-            mid = p["u0"] + 0.5 * ln; half = min(ln, 2.5) / 2
-            p["u0"], p["u1"] = max(p["u0"], mid - half), min(p["u1"], mid + half); pri = 1   # always kept
-        elif r == "replay" and p["key"]:
-            p["u1"] = p["u0"] + min(ln, 4.0); pri = 2
+            pri = 0
+        elif r == "replay" and key:
+            pri = 2
         elif r == "live":
-            mid = p["u0"] + 0.4 * ln; half = min(ln, 2.5) / 2
-            p["u0"], p["u1"] = max(p["u0"], mid - half), min(p["u1"], mid + half); pri = 3
-        elif r == "replay":
-            p["u1"] = p["u0"] + min(ln, 2.5); pri = 4
+            pri = 3
         else:
-            p["u1"] = p["u0"] + min(ln, 1.5); pri = 5
-        order.append((pri, p))
-    keep, used = set(), 0.0
-    for pri, p in sorted(order, key=lambda x: x[0]):
-        need = (p["u1"] - p["u0"]) / p["hi"]
-        if need > 0 and (pri <= 1 or used + need <= S - 0.05):
-            keep.add(id(p)); used += need
-    keep = [p for p in pieces if id(p) in keep]
-    tot = lambda ps: sum((p["u1"] - p["u0"]) / p["hi"] for p in ps)
-    # still too long: first keep only the longest piece per merged-in play (no stutter of 0.4 s fragments)
-    if tot(keep) > S:
-        best = {}
+            pri = 4
+        p["pri"] = pri
+    # short versions
+    post_left, pre_left = {}, {}
+    for p in pieces:                                       # post: from a's event forward
+        if p["role"] == "post":
+            cap = 5.0 if p["key"] else 3.0
+            left = post_left.setdefault("a", cap)
+            ln = min(p["u1"] - p["u0"], left); post_left["a"] = left - ln
+            p["s0"], p["s1"] = p["u0"], p["u0"] + ln
+    for p in reversed(pieces):                             # pre: back from b's event
+        if p["role"] == "pre":
+            cap = 2.5 if L == "IPL" else 7.0
+            left = pre_left.setdefault("b", cap)
+            ln = min(p["u1"] - p["u0"], left); pre_left["b"] = left - ln
+            p["s0"], p["s1"] = p["u1"] - ln, p["u1"]
+    for p in pieces:
+        if p["role"] in ("post", "pre"):
+            continue
+        ln = p["u1"] - p["u0"]
+        short = {2: 3.0, 3: 2.6 if L == "IPL" else 4.0, 4: 1.2}[p["pri"]]
+        p["s0"], p["s1"] = p["u0"], p["u0"] + min(ln, short)
+    dur = lambda p, a, b, hi: (b - a) / hi
+    keep, used = [], 0.0
+    for p in sorted(pieces, key=lambda p: (p["pri"], p["u0"])):
+        need = dur(p, p["s0"], p["s1"], p["hi"])
+        if p["pri"] == 0 or used + need <= S - 0.05:
+            keep.append(p); used += need
+    for p in keep:
+        p["u0"], p["u1"] = p["s0"], p["s1"]
+    # room left: grow kept pieces back toward their full length, by priority
+    room = S - used
+    for p in sorted(keep, key=lambda p: (p["pri"], p["u0"])):
+        if room <= 0.05:
+            break
+        if p["role"] == "pre":
+            grow = min(p["u0"] - p["o0"], room * p["hi"]); p["u0"] -= grow
+        else:
+            grow = min(p["o1"] - p["u1"], room * p["hi"]); p["u1"] += grow
+        room -= grow / p["hi"]
+    keep = [p for p in pieces if p in keep]
+    tot = lambda ps, k="hi": sum((p["u1"] - p["u0"]) / p[k] for p in ps)
+    # the must-keep pieces alone don't fit: emergency speed caps
+    if tot(keep) > S + 1e-6:
         for p in keep:
-            if p["role"] == "live" and (p["step"] not in best or p["u1"] - p["u0"] > best[p["step"]]["u1"] - best[p["step"]]["u0"]):
-                best[p["step"]] = p
-        keep = [p for p in keep if p["role"] != "live" or best.get(p["step"]) is p]
-    # then trim everything proportionally, but never trim an event out: keep >= 0.6 s of b's footage up to its event
-    if tot(keep) > S:
-        f = S / tot(keep)
+            p["hi"] = p["hi2"]
+    # still too long: drop optional pieces, then trim a's result from its end and b's run-up from its start, keeping
+    # b's delivery / snap up to its event (the core) whole as long as possible
+    if tot(keep) > S + 1e-6:
+        keep = [p for p in keep if p["pri"] == 0]
+    if tot(keep) > S + 1e-6:
+        pre = [p for p in keep if p["role"] == "pre"]
+        post = [p for p in keep if p["role"] == "post"]
+        pre_len = sum(p["u1"] - p["u0"] for p in pre)
+        hi = max(p["hi"] for p in keep)
+        budget = S * hi                                            # source seconds that fit
+        pre_keep = min(pre_len, max(core_pre, budget - sum(p["u1"] - p["u0"] for p in post)), budget * 0.6)
+        post_keep = max(0.0, budget - pre_keep)
+        for p in reversed(pre):                                    # from the event backwards
+            ln = min(p["u1"] - p["u0"], pre_keep); pre_keep -= ln; p["u0"] = p["u1"] - ln
+        for p in post:                                             # from the event forwards
+            ln = min(p["u1"] - p["u0"], post_keep); post_keep -= ln; p["u1"] = p["u0"] + ln
         for p in keep:
-            ln = (p["u1"] - p["u0"]) * f
-            if p["role"] == "pre":
-                p["u0"] = p["u1"] - max(ln, min(0.6, p["u1"] - p["u0"]))
-            else:
-                p["u1"] = p["u0"] + ln
+            p["hi"] = hi
     # drop slivers (< 0.3 s on screen) unless they carry the event
     return [p for p in keep if (p["u1"] - p["u0"]) / p["hi"] >= 0.3 or p["role"] in ("post", "pre")]
 
@@ -328,6 +387,9 @@ def solve_speeds(items, S):
     lo, hi, pref = (np.array([p[k] for p in items]) for k in ("lo", "hi", "pref"))
     f = lambda lam: float(np.sum(ln / np.clip(lam * pref, lo, hi)))
     a, b = 1e-3, 1e3
+    if f(b) > S:   # even the caps can't fit (trimming should have prevented this): emergency caps, then uniform
+        hi = np.array([p["hi2"] for p in items])
+        f = lambda lam: float(np.sum(ln / np.clip(lam * pref, lo, hi)))
     if f(a) < S or f(b) > S:   # can't fit inside the speed limits either way: one uniform speed (shows in the report)
         return [float(ln.sum() / S)] * len(items)
     for _ in range(80):
@@ -378,7 +440,10 @@ def snap_cuts(edl, beats):
             continue
         va = (a["src_out"] - a["src_in"]) / (bt - a["song_in"])
         vb = (b["src_out"] - b["src_in"]) / (b["song_out"] - bt)
-        if 0.75 <= va <= 2.6 and 0.75 <= vb <= 2.6:
+        # a beat-snap may nudge a speed by a few percent, never past the piece's own normal cap (or its current speed
+        # if it was already in emergency territory)
+        lim = lambda e, v: 0.75 <= v <= 1.04 * max(e["speed"], CAP["key" if e["why"].startswith("key") else "live"][0])
+        if lim(a, va) and lim(b, vb):
             a["song_out"] = b["song_in"] = float(bt)
             a["speed"], b["speed"] = va, vb
 

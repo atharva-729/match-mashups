@@ -14,6 +14,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 import sister
+import story
 from common import ROOT, job_from_argv, log, mmss, stamp
 
 N = sister.N
@@ -37,36 +38,58 @@ def song_curve(job):
     return d, len(x) / sr
 
 
-def main():
-    job = job_from_argv()
-    gid = job.gid
-    d, song_len = song_curve(job)
-    t0, t1 = d["t0"], d["t1"]
-    a = sister.normalise(d["curve"])
-    b = sister.index_curve(gid)
+def mapping(a, b):
+    """The page's mapping: banded DTW path -> mean song index per game index."""
     dist, path = sister.dtw_path(a, b)
     si, ci = np.zeros(N), np.zeros(N)
     for i, j in path:
         si[j] += i; ci[j] += 1
-    i_of_j = si / ci
+    return dist, si / ci
 
+
+def main():
+    job = job_from_argv()
+    gid = job.gid
+    mode = job.cfg.get("alignment", "page")         # page = the live page's tension match; story = story.py
+    d, song_len = song_curve(job)
+    t0, t1 = d["t0"], d["t1"]
+    a = sister.normalise(d["curve"])
     full = sister.curve(gid)
     n = full["n_steps"]
-    t = np.array([t0 + lerp(i_of_j, s / (n - 1) * (N - 1)) / (N - 1) * (t1 - t0) for s in range(n)])
-    t = np.maximum.accumulate(t)
+    song_t = lambda ioj, x: t0 + lerp(ioj, x * (N - 1)) / (N - 1) * (t1 - t0)
+    dist, i_of_j = mapping(a, sister.index_curve(gid))
+    t_page = np.maximum.accumulate(np.array([song_t(i_of_j, s / (n - 1)) for s in range(n)]))
+    imp = story.importance(gid, job.league)
+    if mode == "story":
+        tau, level, imp = story.story(gid, job.league)
+        dist, i_of_j = mapping(a, sister.normalise(list(level)))
+        t = np.maximum.accumulate(np.array([song_t(i_of_j, tau[s]) for s in range(n)]))
+        game_curve = (level, tau)
+    else:
+        t, game_curve = t_page, None
 
     # beats and onsets
     y, sr = librosa.load(str(job.song), sr=22050, mono=True)
     _, beats = librosa.beat.beat_track(y=y, sr=sr, units="time")
     onsets = librosa.onset.onset_detect(y=y, sr=sr, units="time", backtrack=False)
+    # percussive hits with their strength (drums, timpani, accents): where a big moment should land
+    yp = librosa.effects.percussive(y)
+    env = librosa.onset.onset_strength(y=yp, sr=sr)
+    pk = librosa.onset.onset_detect(onset_envelope=env, sr=sr, units="frames", backtrack=False)
+    ht = librosa.frames_to_time(pk, sr=sr)
+    hs = env[pk] / (np.percentile(env[pk], 95) if len(pk) else 1.0)
+    hits = [[round(float(x), 3), round(float(min(1.0, v)), 3)] for x, v in zip(ht, hs)]
 
     # key steps: the page's 5 moments + every wicket/six (IPL) or TD/turnover/FG (NFL)
     g = sister.game_json(gid)
     ev = {e["step"]: e for e in sister.events(gid)}
     moments = {m["step"]: m for m in g["moments"]}
     key = {}
+    wp = np.asarray(full["wp"], float)
     for s, e in ev.items():
         why = [k for k in (("wicket", "six") if job.league == "IPL" else ("td", "turnover", "fg")) if e.get(k)]
+        if abs(wp[s] - wp[s - 1]) >= story.SWING_FULL[job.league]:
+            why.append("swing")
         if why:
             key[s] = why
     for s in moments:
@@ -75,13 +98,15 @@ def main():
     steps = []
     for s in range(n):
         e = ev.get(s, {})
-        steps.append({"i": s, "t": round(float(t[s]), 3), "wp": full["wp"][s], "tension": full["tension"][s],
+        steps.append({"i": s, "t": round(float(t[s]), 3), "t_page": round(float(t_page[s]), 3), "wp": full["wp"][s],
+                      "tension": full["tension"][s], "importance": round(float(imp[s]), 3),
                       "is_key": s in key, "why": key.get(s, []), "label": e.get("label", "start" if s == 0 else "final"),
                       "desc": e.get("desc", "")})
     job.save("alignment.json", {"match_id": gid, "title": g["title"], "final": g["final"], "league": job.league,
+                                "mode": mode,
                                 "song_len": song_len, "t0": t0, "t1": t1, "dtw_dist": dist,
                                 "steps": steps, "beats": [round(float(v), 3) for v in beats],
-                                "onsets": [round(float(v), 3) for v in onsets]})
+                                "onsets": [round(float(v), 3) for v in onsets], "hits": hits})
 
     # ---- checkpoint 1 ----
     mono = bool(np.all(np.diff(t) >= 0))
@@ -89,8 +114,8 @@ def main():
     ms = [m["step"] for m in g["moments"]]
     js = sister.page_moment_times(job.cfg["demo_key"], gid, ms)      # the page's own JS, run under node
     page_diff = max(abs(t[s] - v) for s, v in zip(ms, js))
-    page_ok = page_diff <= 1.0
-    plot(job, d, full, t, key, song_len)
+    page_ok = page_diff <= 1.0 or mode == "story"      # story mode leaves the page's mapping on purpose
+    plot(job, d, full, t, key, song_len, game_curve)
     ok = mono and start_ok and end_ok and page_ok
     lines = [f"### {stamp()} · Checkpoint 1 ({job.name}): {'PASS' if ok else 'FAIL'}",
              f"- {g['title']} ↔ “{job.cfg['song_title']}” · DTW dist {dist:.4f} · {n} steps · song {song_len:.1f} s "
@@ -102,23 +127,33 @@ def main():
         lines.append(f"  - {mmss(t[s])} · step {s} · {'+'.join(key[s])} · {ev[s]['label']}: {ev[s]['desc'][:90]}")
     lines.append("- Page moments, here vs the page's own JS (core.js + index.html under node): "
                  + ", ".join(f"step {s} {mmss(t[s])} vs {mmss(v)}" for s, v in zip(ms, js))
-                 + f" · max diff {page_diff:.3f} s (≤1 s: {page_ok})")
+                 + f" · max diff {page_diff:.3f} s (≤1 s: {page_ok})"
+             + ("" if mode == "page" else " · alignment mode is STORY (story.py), so the page's times are not the target;"
+                f" page time vs story time at key steps: " + ", ".join(f"{s} {mmss(t_page[s])}→{mmss(t[s])}" for s in sorted(key))))
     log("\n".join(lines))
 
 
-def plot(job, d, full, t, key, song_len):
+def plot(job, d, full, t, key, song_len, game_curve=None):
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 5.6), sharex=True, gridspec_kw={"hspace": 0.08})
     st = np.linspace(d["t0"], d["t1"], N)
     ax1.plot(st, d["curve"], color="#7b3fe4", lw=1.8, label="song energy")
     ax1.set_ylabel("song energy"); ax1.legend(loc="upper left", fontsize=8)
-    ten = np.asarray(full["tension"])
-    ax2.plot(t, ten, color="#e4572e", lw=1.4, label="game tension, at its aligned song time")
+    if game_curve is None:
+        ax2.plot(t, np.asarray(full["tension"]), color="#e4572e", lw=1.4, label="game tension, at its aligned song time")
+        ax2.set_ylabel("tension")
+    else:   # the story level lives on story time: put each grid point at the song time of its story position
+        level, tau = game_curve
+        grid = np.linspace(0, 1, N)
+        steps_at = np.interp(grid, tau, np.arange(len(tau)))
+        ax2.plot(np.interp(steps_at, np.arange(len(t)), t), level, color="#e4572e", lw=1.4,
+                 label="game story level (wickets / sixes / big swings, smoothed), at its aligned song time")
+        ax2.set_ylabel("story level")
     for s in sorted(key):
         ax2.axvline(t[s], color="#2a6fdb" if "moment" in key[s] else "#999", lw=1.2 if "moment" in key[s] else 0.5,
                     alpha=0.9 if "moment" in key[s] else 0.5)
     for s in range(0, len(t), max(1, len(t) // 25)):   # alignment lines: step s (bottom) → its song time (top)
         ax1.axvline(t[s], color="#bbb", lw=0.5, zorder=0)
-    ax2.set_ylabel("tension"); ax2.set_xlabel("song time (s)"); ax2.set_xlim(0, song_len)
+    ax2.set_xlabel("song time (s)"); ax2.set_xlim(0, song_len)
     ax2.legend(loc="upper left", fontsize=8)
     fig.suptitle(f"{job.name}: grey lines = every ~4% of game steps; blue = page moments; light = wickets/sixes or TDs/turnovers/FGs",
                  fontsize=9)

@@ -8,9 +8,14 @@
           The bar updates AFTER a ball, so the ball that produced state s is event step s.
      NFL  state p = the play whose quarter matches and whose snap clock is the nearest at or above the bug's
           clock (score and down & distance as tie-breakers). Its result is event step p + 1.
-4. Per shot: event step (IPL: X->Y inside the shot = ball Y; constant X = ball X+1 if it is a new highlight or
-   the bar ticks to X+1 right after the cut, else a follow-up of ball X), then a non-decreasing (LIS) pass over
-   live shots, then live / replay / filler / junk.
+4. Per shot:
+   IPL  driven by delivery views (bowler's-end camera: pitch strip in the centre, grass both sides, found at 4 fps).
+        The bar during a delivery still shows the state before the ball, so a delivery seen at state X is the ball
+        of event step X + 1. Shots are split at each delivery; the delivery shot and the next 6 s are live, later
+        shots of the same ball (replays, name card, walk back) are its replay / filler. The bar is read only in its
+        left third (team, score, overs), where the bowler's figures can't be mistaken for the score.
+   NFL  first readable play in the shot -> its result step; a non-decreasing (LIS) pass over live shots, then
+        live / replay / filler / junk.
 Writes work/<job>/shots.json, clips.json, contact_sheet.jpg.
 usage: python scripts/tag_shots.py inputs/<job> [--reocr]
 """
@@ -40,6 +45,51 @@ def detect_shots(job, part):
     return shots
 
 
+# ---------------------------------------------------------------- delivery shots (IPL)
+FPS_VIS = 4.0
+
+
+def delivery_features(job, part):
+    """Per frame (4 fps): how much the picture looks like the bowler's-end delivery view: a light pitch strip down the
+    centre with grass both sides. Columns: t, pitch share in the centre, grass left, grass right, grass in the centre."""
+    cache = job.wpath(f"deliv_{part.stem}.json")
+    if cache.exists():
+        return json.loads(cache.read_text())
+    cap = cv2.VideoCapture(str(part))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    step, out, k = max(1, round(fps / FPS_VIS)), [], 0
+    while True:
+        ok = cap.grab()
+        if not ok:
+            break
+        if k % step == 0:
+            _, f = cap.retrieve()
+            s = cv2.resize(f, (160, 90), interpolation=cv2.INTER_AREA)
+            H, S, V = (cv2.cvtColor(s, cv2.COLOR_BGR2HSV).astype(int)[..., i] for i in range(3))
+            green = (H >= 30) & (H <= 90) & (S > 50) & (V > 50)
+            pitch = (~green) & (V > 100) & (S < 120) & (H >= 8) & (H <= 40)
+            y0, y1 = 27, 72                               # above the score bar
+            out.append([round(k / fps, 3), round(float(pitch[y0:y1, 68:92].mean()), 3),
+                        round(float(green[y0:y1, 10:45].mean()), 3), round(float(green[y0:y1, 115:150].mean()), 3),
+                        round(float(green[y0:y1, 68:92].mean()), 3)])
+        k += 1
+    cache.write_text(json.dumps(out))
+    return out
+
+
+def delivery_onsets(feats, min_gap=3.0):
+    """Start times of delivery views: >= 2 consecutive frames (0.5 s) of pitch-in-the-middle, grass-both-sides."""
+    hit = [(t, c >= 0.4 and l >= 0.6 and r >= 0.6 and cg <= 0.45) for t, c, l, r, cg in feats]
+    onsets, run = [], []
+    for t, h in hit + [(1e9, False)]:
+        if h:
+            run.append(t); continue
+        if len(run) >= 2 and (not onsets or run[0] - onsets[-1] >= min_gap):
+            onsets.append(run[0])
+        run = []
+    return onsets
+
+
 # ---------------------------------------------------------------- OCR
 def extract_crops(job, part, box):
     d = job.wpath(f"crops_{part.stem}")
@@ -65,19 +115,50 @@ def ocr(reader, img, threshold):
     return [[t, round(float(c), 3), [int(min(p[0] for p in b)), int(min(p[1] for p in b))]] for b, t, c in res]
 
 
-def run_ocr(job, part, box, parser, reocr):
-    cache = job.wpath(f"ocr_{part.stem}.json")
-    if cache.exists() and not reocr:
-        return json.loads(cache.read_text())
-    crops = extract_crops(job, part, box)
-    imgs = [cv2.imread(str(f)) for f in crops]
+def bar_present(imgs, league):
+    """Is the bar on screen? Pixels that sit at their median in most frames are the bar's background. IPL: judged on
+    the left third only (team, score, overs), because the middle panel swaps between layouts ('NEXT TO BAT',
+    'REVIEWS REMAINING', a speed chart) and would otherwise make the bar look absent."""
     gray = np.stack([cv2.cvtColor(i, cv2.COLOR_BGR2GRAY) for i in imgs]).astype(np.int16)
-    # is the bar on screen? pixels that sit at their median in most frames are the bar's background
+    if league == "IPL":
+        gray = gray[:, :, : int(gray.shape[2] * IPLParser.ZONE)]
     med = np.median(gray, axis=0)
     close = np.abs(gray - med) < 28
     mask = close.mean(axis=0) > 0.45
     use_mask = mask.mean() > 0.10
-    present = [(not use_mask) or close[k][mask].mean() > 0.55 for k in range(len(imgs))]
+    return [(not use_mask) or bool(close[k][mask].mean() > 0.55) for k in range(len(imgs))]
+
+
+def topup_ocr(job, part, box, out, cache):
+    """OCR frames the zone-based presence check finds but the cached pass skipped (cached results stay as they are)."""
+    import multiprocessing as mp, os, time
+    crops = extract_crops(job, part, box)
+    present = bar_present([cv2.imread(str(f)) for f in crops], job.league)
+    todo = [k for k in range(len(crops)) if present[k] and not out["frames"][k]["tokens"]]
+    t0 = time.time()
+    if todo:
+        th = out["preprocess"] == "adaptive"
+        with mp.get_context("spawn").Pool(max(1, (os.cpu_count() or 2) - 1), initializer=_worker_init) as pool:
+            res = pool.map(_ocr_chunk, [([str(crops[k])], [True], th, 0) for k in todo], chunksize=1)
+        for k, r in zip(todo, res):
+            out["frames"][k]["tokens"] = r[0][0]
+    out["topup"] = {"frames": len(todo), "seconds": round(time.time() - t0)}
+    out["bar_on_screen"] = round(sum(present) / len(present), 3)
+    print(f"  top-up OCR: {len(todo)} frames the first pass skipped, {time.time() - t0:.0f} s", flush=True)
+    cache.write_text(json.dumps(out))
+    return out
+
+
+def run_ocr(job, part, box, parser, reocr):
+    cache = job.wpath(f"ocr_{part.stem}.json")
+    if cache.exists() and not reocr:
+        out = json.loads(cache.read_text())
+        if job.league == "IPL" and "topup" not in out:
+            out = topup_ocr(job, part, box, out, cache)
+        return out
+    crops = extract_crops(job, part, box)
+    imgs = [cv2.imread(str(f)) for f in crops]
+    present = bar_present(imgs, job.league)
     # OCR in parallel worker processes (one thread each; all cores). The README's adaptive threshold first; its success
     # rate on a 100-frame sample of bar-on-screen frames decides whether to redo with plain gray (Tesseract isn't
     # installed; easyocr's second mode is the fallback).
@@ -108,7 +189,7 @@ def run_ocr(job, part, box, parser, reocr):
     n_ocr = sum(r[1] for r in res)
     print(f"  full pass ({'adaptive' if th else 'gray'}): {n_ocr} OCR calls on {nw} workers in {time.time() - t0:.0f} s", flush=True)
     out = {"engine": "easyocr", "preprocess": "adaptive" if th else "gray", "sample_rates": rates,
-           "bar_on_screen": round(sum(present) / len(present), 3), "ocr_calls": n_ocr,
+           "bar_on_screen": round(sum(present) / len(present), 3), "ocr_calls": n_ocr, "topup": {"frames": 0},
            "frames": [{"t": round(k / FPS_OCR, 2), "tokens": toks[k]} for k in range(len(crops))]}
     cache.write_text(json.dumps(out))
     return out
@@ -147,8 +228,13 @@ def text_of(tokens):
 
 
 class IPLParser:
-    """'GT 139-4 19.4 V LSG' / 'LSG 67-6 11.5 V GT TARGET 145' -> sb state index."""
-    def __init__(self, gid):
+    """'GT 139-4 19.4 V LSG' / 'LSG 67-6 11.5 V GT TARGET 145' -> sb state index.
+    Only tokens in the bar's left third are read (team, score, overs, target): the batter and bowler panels to the
+    right hold look-alike numbers (bowler figures '3-24', bowler overs '3.4') that otherwise get read as the score."""
+    ZONE = 0.33
+
+    def __init__(self, gid, box_w=None):
+        self.zone_px = self.ZONE * 3 * box_w if box_w else None     # OCR runs on a x3 upscale of the crop
         g = sister.game_json(gid)
         self.sb, self.n, self.brk = g["sb"], g["n_steps"], g["break_step"]
         self.first, self.second = g["home"], g["away"]           # 'home' = batted first on the page
@@ -158,6 +244,8 @@ class IPLParser:
         self.eventful = {e["step"] for e in sister.events(gid) if e["wicket"] or e["six"] or e["four"]}
 
     def raw(self, tokens):
+        if self.zone_px:
+            tokens = [t for t in (tokens or []) if t[2][0] < self.zone_px]
         if not tokens:
             return None
         words = [t[0].upper().strip() for t in tokens]
@@ -232,24 +320,34 @@ class NFLParser:
     def raw(self, tokens):
         if not tokens:
             return None
-        fix = lambda s: re.sub(r"\b(IST|LST|1S7)\b", "1ST", re.sub(r"\bZND\b", "2ND", re.sub(r"\b(ATH|4TN|ITH)\b", "4TH",
-                                re.sub(r"\b3R[O0D]\b", "3RD", s))))
-        words = [fix(t[0].upper().strip()) for t in tokens]
-        txt = " ".join(words)
+        # common misreads of the ordinals (more of them at low resolution: '3R0', 'BR0', 'ZN0', 'I5T', '7ST')
+        fix = lambda s: re.sub(r"\b(IST|LST|1S7|I5T|15T|7ST|1ST)\b", "1ST", re.sub(r"\b(ZND|ZN0|2N0|2ND)\b", "2ND",
+                       re.sub(r"\b(ATH|4TN|ITH|4TH)\b", "4TH", re.sub(r"\b[3B8]R[O0DV]\b", "3RD", s))))
+        whole = [fix(t[0].upper().strip()) for t in tokens]
+        txt = " ".join(whole)
+        # OCR sometimes glues the quarter and the clock into one token ('3RD  14:19'): look at the parts as well
+        words = whole + [w for t in whole if re.search(r"\s", t) for w in t.split()]
         # OCR comes back in a jumbled order, so read token by token: the clock is its own token, the colon is
-        # sometimes read as 4, 8 or H ("7459" = 7:59, "1H02" = 1:02)
+        # sometimes read as 3, 4, 8 or H ("7459" = 7:59, "12830" = 12:30, "1H02" = 1:02), maybe with a stray digit after
         mm = ss = None
         for w in words:
-            m = re.fullmatch(r"(\d{1,2})\s*[:.H]\s*(\d{2})(\s.*)?", w) or re.fullmatch(r"(\d)[48](\d{2})", w)
+            m = (re.fullmatch(r"(\d{1,2})\s*[:.H]\s*(\d{2})\d?(\s.*)?", w) or re.fullmatch(r"(\d{1,2})[348](\d{2})\d?", w)
+                 or re.fullmatch(r"(\d)[348](\d{2})\d?", w))
             if m and int(m.group(1)) <= 15 and int(m.group(2)) <= 59:
                 mm, ss = int(m.group(1)), int(m.group(2))
                 break
         if mm is None:
             return None
         q = None                                   # the quarter is an ordinal standing alone (not a down "1ST & 10")
-        for w in words:
+        for w in whole:
             if w in self.ORD:
                 q = self.ORD[w]
+        if q is None:                              # glued tokens: an ordinal not followed by '&' ('3RD  14:19')
+            for t in whole:
+                parts = t.split()
+                for a, b in zip(parts, parts[1:] + [""]):
+                    if a in self.ORD and not b.startswith("&"):
+                        q = self.ORD[a]
         dn = re.search(r"(1ST|2ND|3RD|4TH)\s*&\s*(\d{1,2}|G[O0]AL)", txt)
         hs = re.search(rf"\b{self.home}\s*(\d{{1,2}})\b", txt)
         as_ = re.search(rf"\b{self.away}\s*(\d{{1,2}})\b", txt)
@@ -268,8 +366,12 @@ class NFLParser:
             dc = self.sb["c"][p] - rd["c"]
             if dc >= 0:
                 c = dc / 15.0                  # play p in progress (its clock runs down from its snap)
+                if dc > 12:                    # no play runs this long: more likely the next play's pre-snap clock
+                    c += 0.1 * (dc - 12)
             elif dc >= -40 and rd["down"] is not None and self.down[p] == rd["down"] and self.togo[p] == rd["togo"]:
                 c = -dc / 15.0 + 0.3           # clock running before play p's snap: the bug already shows p's down
+            elif dc >= -40 and rd["down"] is None:
+                c = -dc / 15.0 + 0.8           # same, but the down wasn't legible
             else:
                 continue
             if rd["h"] is not None and rd["h"] != self.sb["h"][p]:
@@ -431,6 +533,77 @@ def tag_part(job, part, shots, frames, parser, league):
     return rows
 
 
+HIT = 1.2          # the bat meets the ball ~1.2 s after a delivery view starts (run-up already under way at the cut)
+LIVE_FOLLOW = 6.0  # shots starting within this long after the delivery are the live action (the catch, the chase)
+REPLAY_SPAN = 15.0 # later shots of the same ball within this long are its replays / reactions / name card
+
+
+def tag_part_ipl(job, part, shots, frames, parser):
+    """IPL, driven by delivery views. During a delivery the bar still shows the state BEFORE the ball, so a delivery
+    seen with the bar at state X is ball row X, whose event step is X + 1. Every later shot (the catch, replays,
+    the batter's name card, the walk back) belongs to that ball until the next delivery."""
+    for f in frames:
+        f["p"] = parser(f["tokens"])
+    reads = smooth_states([(f["t"], f["p"]["state"]) for f in frames if f["p"]])
+    onsets = delivery_onsets(delivery_features(job, part))
+
+    def ball_of(o, o_next):
+        now = [s for t, s in reads if o <= t <= o + 2.0]            # the previous ball's update can lag into the cut
+        if now:
+            return max(now) + 1, "bar"
+        after = [(t, s) for t, s in reads if o + 2.0 < t < min(o_next, o + 12)]
+        if after:                    # first reading after the delivery: still the state before it, or already its result?
+            X = after[0][1]
+            if any(s > X for _, s in after):                         # it ticks later on: X was the state before
+                return X + 1, "bar after, ticks"
+            return (X if X in parser.eventful else X + 1), "bar after"
+        before = [s for t, s in reads if o - 3 <= t < o]             # only right before the cut (a jump is a new clip)
+        if before:
+            return max(before) + 1, "bar before"
+        return None, None
+
+    balls, last = [], 0
+    for o, o_next in zip(onsets, onsets[1:] + [1e9]):
+        b, how = ball_of(o, o_next)
+        if b is None or b < last:
+            continue
+        balls.append({"o": o, "step": b, "how": how, "replay": b == last})
+        last = b
+    # split shots at delivery onsets so each delivery starts its own shot
+    cuts = sorted({round(x, 3) for a, b in shots for x in (a, b)} | {round(d["o"], 3) for d in balls})
+    pieces = [(a, b) for a, b in zip(cuts, cuts[1:]) if b - a > 0.05]
+    rows = []
+    for a, b in pieces:
+        rs = [s for t, s in reads if a <= t < b]
+        rows.append({"part": part.name, "start": a, "end": b, "reads": rs, "step": None, "event_t": None,
+                     "kind": None, "state": int(np.median(rs)) if rs else None})
+    has_info = [(t, 1) for t, _ in reads] + [(d["o"], 1) for d in balls]
+    bi = 0
+    cur = None
+    for r in rows:
+        while bi < len(balls) and balls[bi]["o"] <= r["start"] + 1e-3:
+            cur = balls[bi]; bi += 1
+        near = any(abs(t - r["start"]) <= 20 or abs(t - r["end"]) <= 20 or r["start"] <= t <= r["end"] for t, _ in has_info)
+        if cur is None or not near:
+            r["kind"] = "junk"
+            continue
+        r["step"] = cur["step"]
+        dt = r["start"] - cur["o"]
+        if abs(dt) < 1e-3:
+            r["kind"] = "replay" if cur["replay"] else "live"
+            r["event_t"] = min(r["end"], cur["o"] + HIT)
+            r["delivery"] = cur["how"]
+        elif dt < LIVE_FOLLOW and not cur["replay"]:
+            r["kind"] = "live"
+        elif dt < REPLAY_SPAN:
+            r["kind"] = "replay"
+        else:
+            r["kind"] = "filler"
+        if r["event_t"] is None:
+            r["event_t"] = r["start"] + 0.4 * (r["end"] - r["start"])
+    return rows
+
+
 # ---------------------------------------------------------------- contact sheet
 def contact_sheet(job, clips, ev):
     tagged = [c for c in clips if c["kind"] in ("live", "replay")]
@@ -462,16 +635,20 @@ def main():
     job = job_from_argv()
     reocr = "--reocr" in sys.argv
     boxes = job.load("box.json")
-    parser = IPLParser(job.gid) if job.league == "IPL" else NFLParser(job.gid)
     clips, ocr_stats = [], {}
     for part in job.parts:
+        box = boxes[part.name]["box"]
+        parser = IPLParser(job.gid, box[2]) if job.league == "IPL" else NFLParser(job.gid)
         shots = detect_shots(job, part)
         print(part.name, len(shots), "shots", flush=True)
-        o = run_ocr(job, part, boxes[part.name]["box"], parser, reocr)
+        o = run_ocr(job, part, box, parser, reocr)
         ok = sum(parser(f["tokens"]) is not None for f in o["frames"])
         ocr_stats[part.name] = {"preprocess": o["preprocess"], "sample_rates": o["sample_rates"],
                                 "frames": len(o["frames"]), "parsed": ok}
-        rows = tag_part(job, part, shots, o["frames"], parser, job.league)
+        if job.league == "IPL":
+            rows = tag_part_ipl(job, part, shots, o["frames"], parser)
+        else:
+            rows = tag_part(job, part, shots, o["frames"], parser, job.league)
         if part == job.parts[0]:      # pre-game footage before the first live shot: usable only as the cold open
             for r in rows:
                 if r["kind"] == "live":
