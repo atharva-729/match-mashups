@@ -14,12 +14,16 @@ says the snap, but the song moment belongs to the result, and the snap is ~5 s e
      never below 0.8x (0.75x for a key replay).
   5. Snap cuts to a beat within 0.25 s.
 Writes work/<job>/edl.json: [{part, src_in, src_out, speed, song_in, song_out, step, why}].
-usage: python scripts/plan_edit.py inputs/<job>
+v2 (--len 60|120): runs against that length's alignment. When the key moments can't all fit at 1.0x (a 60 s summary),
+the lowest-priority ones stop being key (PRIORITY: page moments > TDs > turnovers > lead-changing FGs > other FGs >
+swing-only), and the drops are logged. The +-1 s check is advisory (sync precision isn't the goal).
+usage: python scripts/plan_edit.py inputs/<job> [--len 60|120]
 """
 import bisect
 import numpy as np
 from scipy.optimize import minimize
 
+import sister
 from common import job_from_argv, log, mmss, stamp
 
 MIN_GAP, MIN_GAP_KEY = 0.9, 0.6
@@ -34,6 +38,7 @@ HIT_WINDOW = 1.5    # how far a key moment may move to land on a strong hit
 END_HOLD = 4.0      # the last moment lands at least this long before the song ends (its result plays out)
 # the core of a key moment that must be shown: before its event point / after it (seconds of source)
 CORE = {"IPL": (1.2, {"must": 3.5, "high": 3.0}), "NFL": (4.0, {"must": 2.0, "high": 1.5})}
+CORE_SHORT = {"IPL": (1.2, 3.0), "NFL": (3.0, 1.5)}    # v2 60 s summaries
 
 
 class Source:
@@ -76,12 +81,13 @@ def main():
     hits = np.array(sorted(set(al["beats"]) | set(al["onsets"])))
     tier = {}
     for st in steps:
-        if any(w in MUST[L] for w in st["why"]):
+        if any(w in MUST[L] for w in st["why"]) or ((job.L or L == "NFL") and "moment" in st["why"]):   # v2: page moments are must-keep (NFL)
             tier[st["i"]] = "must"
         elif any(w in HIGH[L] for w in st["why"]):
             tier[st["i"]] = "high"
     key_steps = set(tier)
     src = Source(clips)
+    pri = priorities(job, steps) if job.L else {}
 
     # ---- units: one per step with live footage (its consecutive live shots) ----
     units, seen = [], set()
@@ -106,9 +112,15 @@ def main():
         pre_av = E - min(src.c[j]["u0"] for j in own)
         post_av = max(src.c[j]["u1"] for j in own) - E
         core_pre, core_post = min(pre_av, CORE[L][0]), min(post_av, CORE[L][1][tier[s]])
+        short = (min(core_pre, CORE_SHORT[L][0]), min(core_post, CORE_SHORT[L][1]))
         units.append({"step": s, "k": src.at(E), "E": E, "e": float(t[s]), "key": True, "tier": tier[s],
-                      "low": ten[s] < low_thr, "core": (core_pre, core_post)})
+                      "low": ten[s] < low_thr, "core": (core_pre, core_post), "core_short": short})
     units.sort(key=lambda u: u["E"])
+    prio_dropped = []
+    if job.L:      # v2: drop key moments by priority until the rest fit at 1.0x
+        units, prio_dropped = prune(units, pri, song_len, ten)
+        for u in prio_dropped:
+            tier.pop(u["step"], None); key_steps.discard(u["step"])
 
     # 1. merge units that are too close in song time
     dropped = []
@@ -218,16 +230,109 @@ def main():
     job.save("plan_report.json", report)
     speeds = [e["speed"] for e in edl]
     c_ok = abs(total - song_len) <= 0.05 and not gaps and abs(edl[0]["song_in"]) < 1e-6
+    # the +-1 s check is advisory since v2: the song/game correlation doesn't need to be tight ("the human
+    # mind still tends to do a good job of finding patterns"), so it is reported but never fails a run
     k_ok = ok / max(1, n_key) >= 0.8
+    if job.L:
+        return checkpoint2(job, edl, units, prio_dropped + dropped, pri, steps, song_len, total, gaps, cuts, rep, ok, n_key)
     log("\n".join([
-        f"### {stamp()} · Checkpoint 4 ({job.name}): {'PASS' if c_ok and k_ok else 'FAIL'}",
+        f"### {stamp()} · Checkpoint 4 ({job.name}): {'PASS' if c_ok else 'FAIL'}",
         f"- EDL entries {len(edl)} · cuts {cuts} · average shot {song_len / (cuts + 1):.2f} s · speeds "
         f"{min(speeds):.2f}–{max(speeds):.2f}× (median {np.median(speeds):.2f}×)",
         f"- Covers the song: sum {total:.3f} s vs song {song_len:.3f} s · gaps/overlaps {gaps or 'none'} ({c_ok})",
         f"- Units {len(units)} (dropped as too close: {len(dropped)}) · placement solver: {res.message}",
-        f"- Key moments within ±1 s: {ok}/{n_key} reachable ones with live footage = {ok / max(1, n_key):.0%} (need ≥80%: {k_ok}); "
+        f"- Key moments within ±1 s (advisory): {ok}/{n_key} reachable ones with live footage = {ok / max(1, n_key):.0%}; "
         f"{limited_n} more are footage-limited (the highlights hold too little footage before/after them)",
         *rep]))
+
+
+PRIORITY_NAMES = {1: "page moment", 2: "TD", 3: "turnover", 4: "lead-changing FG", 5: "FG", 6: "swing only",
+                  7: "other"}
+
+
+def priorities(job, steps):
+    """v2 Phase 2: step -> priority (1 = keep first). NFL: page moments, TDs, turnovers, lead-changing FGs, other FGs,
+    then key steps that are only a win-probability swing. IPL (no v2 runs): wickets 2, sixes 3."""
+    sb = sister.curve(job.gid)["sb"]
+    out = {}
+    for st in steps:
+        w, s = st["why"], st["i"]
+        if not w:
+            continue
+        if "moment" in w:
+            out[s] = 1
+        elif "td" in w or "wicket" in w:
+            out[s] = 2
+        elif "turnover" in w or "six" in w:
+            out[s] = 3
+        elif "fg" in w:
+            if job.league == "NFL" and 0 < s < len(sb["h"]):
+                before = np.sign(sb["h"][s - 1] - sb["a"][s - 1])
+                after = np.sign(sb["h"][s] - sb["a"][s])
+                out[s] = 4 if before != after else 5
+            else:
+                out[s] = 5
+        elif "swing" in w:
+            out[s] = 6
+        else:
+            out[s] = 7
+    return out
+
+
+def prune(units, pri, song_len, ten):
+    """Drop key moments, lowest priority first (least tense first within a priority), until every remaining one gets
+    its core (run-up + result) at 1.0x: start + sum of pairwise spacing + END_HOLD <= the song."""
+    def need(us):
+        if not us:
+            return 0.0
+        tot = max(0.5, us[0]["core"][0] / CAP["key"][0]) + END_HOLD
+        for a, b in zip(us, us[1:]):
+            tot += max(MIN_GAP_KEY, (a["core"][1] + b["core"][0]) / CAP["key"][0])
+        return tot
+    units, dropped = list(units), []
+    if need(units) > song_len:          # first: shorter cores (run-up 3 s, result 1.5 s) instead of faster ones
+        for u in units:
+            u["core"] = u["core_short"]
+    while units and need(units) > song_len:
+        lose = max(units, key=lambda u: (pri.get(u["step"], 7), -ten[u["step"]]))
+        units.remove(lose); dropped.append(lose)
+    return units, dropped
+
+
+def checkpoint2(job, edl, units, prio_dropped, pri, steps, song_len, total, gaps, cuts, rep, ok, n_key):
+    """v2 Checkpoint 2: length, continuity, speed, key moments on screen (by priority for 60 s)."""
+    speeds = [e["speed"] for e in edl]
+    on_screen = {e["step"] for e in edl if e.get("kind") == "live"}
+    in_footage = {u["step"] for u in units} | {u["step"] for u in prio_dropped}
+    keys = [s for s in pri if s in in_footage]
+    shown = [s for s in keys if s in on_screen]
+    len_ok = abs(total - song_len) <= 0.1 and abs(song_len - job.L) <= 0.5
+    cont_ok = not gaps and abs(edl[0]["song_in"]) < 1e-6
+    sp_ok = max(speeds) <= 1.35
+    if job.L >= 120:
+        k_ok = len(shown) >= 0.8 * len(keys)
+        k_txt = f"key moments in the footage on screen: {len(shown)}/{len(keys)} (≥80%: {k_ok})"
+    else:
+        must = [s for s in keys if pri[s] <= 2]
+        k_ok = all(s in on_screen for s in must)
+        k_txt = (f"page moments + TDs in the footage on screen: {sum(s in on_screen for s in must)}/{len(must)} "
+                 f"(all: {k_ok}); all key moments on screen {len(shown)}/{len(keys)}")
+    ok_all = len_ok and cont_ok and sp_ok and k_ok
+    import json
+    (job.work / str(job.L) / "check2.json").write_text(json.dumps({
+        "pass": bool(ok_all), "speed_min": round(min(speeds), 3), "speed_max": round(max(speeds), 3),
+        "keys_shown": len(shown), "keys_in_footage": len(keys), "dropped": [u["step"] for u in prio_dropped]}), encoding="utf-8")
+    drops = [f"  - dropped step {u['step']} ({steps[u['step']]['label']}, {PRIORITY_NAMES[pri.get(u['step'], 7)]}): "
+             f"{'still on screen as ordinary footage' if u['step'] in on_screen else 'cut'} (no room at 1.0x)"
+             for u in prio_dropped]
+    log("\n".join([
+        f"### {stamp()} · Checkpoint 2 ({job.tag}): {'PASS' if ok_all else 'FAIL'}",
+        f"- EDL {total:.3f} s vs window {song_len:.3f} s (L ± 0.1: {len_ok}) · gaps/overlaps {gaps or 'none'} ({cont_ok}) · "
+        f"{len(edl)} entries, {cuts} cuts",
+        f"- Speeds {min(speeds):.2f}–{max(speeds):.2f}× (median {np.median(speeds):.2f}×; max ≤ 1.35: {sp_ok})",
+        f"- {k_txt}",
+        f"- Key moments kept as anchors: {len(units)}; dropped by priority: {len(prio_dropped)}", *drops,
+        f"- ±1 s of the aligned time (advisory): {ok}/{n_key}", *rep]))
 
 
 def song_time_of(edl, src, u):

@@ -7,7 +7,11 @@ it), every other cut is hard. The same graph adds the song as the only audio (0.
 title card and a 3 s end card (drawtext over a dark gradient band, no logos).
 --debug also writes mashup_debug.mp4 with a corner label per entry (step · over.ball/clock · desc) and reads the label
 back at every key moment (Checkpoint 5's OCR check); without it, Checkpoint 5 checks duration, audio and the EDL.
-usage: python scripts/render.py inputs/<job> [--debug] [--check-only]
+v2 (--len 60|120) writes three files to outputs/<job>/<L>/ instead (the player draws titles, captions and the visual):
+  video.mp4  the cut, no audio, no cards        game.m4a  the broadcast's own sound (scripts/game_audio.py)
+  song.m4a   the song window, 1.5 s fades, loudnorm I=-16
+plus Checkpoint 3 (lengths, no audio in the video, click check at every audio cut, --debug labels at 4 cuts).
+usage: python scripts/render.py inputs/<job> [--len 60|120] [--debug] [--check-only]
 """
 import json, shutil, subprocess, sys
 from pathlib import Path
@@ -110,13 +114,15 @@ def cards(job, al, song_len, work):
     ]), (T0, T1, E0, E1)
 
 
-def srt(edl, ev, path):
+def srt(edl, ev, path, pin=r"{\an7}"):
+    """Debug labels. libass pin: an7 = top-left (force_style's legacy 7 is top-right); v2 uses an1 = bottom-left,
+    because some bugs (FOX 2016) sit top-left."""
     ts = lambda x: f"{int(x // 3600):02d}:{int(x % 3600 // 60):02d}:{int(x % 60):02d},{int(round((x % 1) * 1000)) % 1000:03d}"
     lines = []
     for k, e in enumerate(edl, 1):
         d = ev.get(e["step"], {})
-        txt = (f"{e['step']} · {d.get('label', '')} · {d.get('desc', '')[:72]}  [{e['kind']} {e['speed']:.2f}x]"
-               if e["step"] else f"pre-game intro  [{e['speed']:.2f}x]")
+        txt = (f"{pin}STEP {e['step']} · {d.get('label', '')} · {d.get('desc', '')[:72]}  [{e['kind']} {e['speed']:.2f}x]"
+               if e["step"] else f"{pin}pre-game intro  [{e['speed']:.2f}x]")
         lines += [str(k), f"{ts(e['song_in'])} --> {ts(e['song_out'])}", txt, ""]
     path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -147,8 +153,94 @@ def final(job, edl, fps, al, song_len, work, out, debug):
          str(out)], cwd=work)
 
 
+def render_v2(job, debug):
+    import time
+    import game_audio
+    from common import ROOT
+    edl, al = job.load("edl.json"), job.load("alignment.json")
+    L, out, work = al["song_len"], job.out_l, job.work / str(job.L)
+    fps = fps_of(job.parts[0])
+    ev = {e["step"]: e for e in sister.events(job.gid)}
+    t0 = time.time()
+    inputs, chain = video_graph(job, edl, fps)
+    audio_only = "--audio-only" in sys.argv          # iterate on the sound without re-encoding the picture
+    for name, dbg in () if audio_only else (("video.mp4", False),) + ((("video_debug.mp4", True),) if debug else ()):
+        ch = list(chain)
+        if dbg:
+            srt(edl, ev, work / "debug.srt", pin=r"{\an1}")
+            ch.append("[vcat]subtitles=debug.srt:force_style='FontName=Consolas,FontSize=11,PrimaryColour=&H00FFFFFF,"
+                      "BackColour=&H99000000,BorderStyle=4,Outline=0,Shadow=0,Alignment=7,MarginL=12,MarginV=10'[v]")
+        else:
+            ch.append("[vcat]null[v]")
+        script = work / ("graph_debug.txt" if dbg else "graph.txt")
+        script.write_text(";\n".join(ch), encoding="utf-8")
+        run(["ffmpeg", "-v", "error", "-y", *inputs, "-filter_complex_script", script.name, "-map", "[v]", "-an",
+             "-t", f"{L:.3f}", *ENC, "-r", str(fps), "-movflags", "+faststart", str(out / name)], cwd=work)
+    t_v = time.time() - t0
+    a, b = job.cfg[f"song_start_{job.L}"], job.cfg[f"song_end_{job.L}"]
+    run(["ffmpeg", "-v", "error", "-y", "-ss", f"{a:.3f}", "-t", f"{L:.3f}", "-i", str(ROOT / job.cfg["song_file"]),
+         "-vn", "-af", f"afade=t=in:d=1.5,afade=t=out:st={L - 1.5:.3f}:d=1.5,loudnorm=I=-16:TP=-1.5:LRA=11",
+         "-ar", "44100", "-c:a", "aac", "-b:a", "192k", "-t", f"{L:.3f}", str(out / "song.m4a")])
+    t1 = time.time()
+    plan = game_audio.build(job, edl, job.L, out / "game.m4a")
+    job.save("audio_plan.json", plan)
+    t_a = time.time() - t1
+    check_v2(job, al, edl, plan, ev, debug, (t_v, t_a))
+
+
+def check_v2(job, al, edl, plan, ev, debug, times):
+    """Checkpoint 3 (v2): lengths, no audio stream in the video, click check, debug labels at 4 cuts."""
+    import game_audio
+    out, L = job.out_l, al["song_len"]
+    durs = {f: probe_duration(out / f) for f in ("video.mp4", "game.m4a", "song.m4a")}
+    len_ok = all(abs(d - L) <= 0.1 for d in durs.values())
+    na = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of",
+                         "csv=p=0", str(out / "video.mp4")], capture_output=True, text=True).stdout.split()
+    cuts = sorted({x["out_in"] for x in plan[1:]} | {x["out_out"] for x in plan[:-1]})
+    worst = game_audio.click_check(out / "game.m4a", cuts)
+    click_ok = worst <= 1.5
+    lab_rows, lab_ok = [], True
+    if debug:
+        import re
+        from rapidocr_onnxruntime import RapidOCR
+        reader = RapidOCR()
+        kdir = job.work / str(job.L) / "label_check"; shutil.rmtree(kdir, ignore_errors=True); kdir.mkdir()
+        hard = [i for i in range(1, len(edl)) if is_cut(edl[i - 1], edl[i]) and edl[i]["step"]]
+        for i in [hard[int(k * (len(hard) - 1) / 3)] for k in range(4)] if len(hard) >= 4 else hard:
+            e = edl[i]; t = (e["song_in"] + e["song_out"]) / 2
+            f = kdir / f"cut{i:03d}.jpg"
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{t:.3f}", "-i", str(out / "video_debug.mp4"),
+                            "-frames:v", "1", str(f)], check=True)
+            res, _ = reader(cv2.imread(str(f))[-90:, : int(W * 0.62)])    # the label, pinned bottom-left
+            text = " ".join(r[1] for r in sorted(res or [], key=lambda r: (round(r[0][0][1] / 20), r[0][0][0])))
+            m = re.search(r"STEP\s*(\d{1,3})", text.upper().replace("5TEP", "STEP"))   # 'STEP 82 · Q2 01:09 · ...'
+            shown = int(m.group(1)) if m else None
+            good = shown == e["step"]
+            lab_ok &= good
+            lab_rows.append(f"  - cut {i} at {mmss(t)}: label reads {shown}, EDL says {e['step']} {'PASS' if good else 'FAIL'}")
+    tempos = [x["tempo"] for x in plan]
+    drift = [abs(x["drift_end"]) for x in plan]
+    clean = sum(x["end"].startswith("pause") or x["end"] == "end of the summary" for x in plan)
+    ok = len_ok and not na and click_ok and lab_ok
+    (job.work / str(job.L) / "check3.json").write_text(json.dumps({
+        "pass": bool(ok), "click_ratio": round(worst, 3), "pieces": len(plan), "tempo_max": max(tempos),
+        "drift_end_max": max(drift), "labels_ok": bool(lab_ok), "debug": bool(debug)}), encoding="utf-8")
+    log("\n".join([
+        f"### {stamp()} · Checkpoint 3 ({job.tag}): {'PASS' if ok else 'FAIL'}",
+        f"- Lengths vs {L:.3f} s: " + ", ".join(f"{k} {v:.3f}" for k, v in durs.items()) + f" (± 0.1: {len_ok})",
+        f"- video.mp4 audio streams: {len(na)} (0: {not na}) · rendered in {times[0]:.0f} s; game sound in {times[1]:.0f} s",
+        f"- Click check: worst cut jump = {worst:.2f}× the file's 99.9th-percentile jump (≤ 1.5: {click_ok})",
+        f"- Game sound: {len(plan)} pieces; {clean} end in a clear pause; tempo 1.0× on {sum(t <= 1.001 for t in tempos)}, "
+        f"max {max(tempos):.2f}×; drift from the picture at a piece's end: median {np.median(drift):.1f} s, max {max(drift):.1f} s "
+        f"(`work/{job.name}/{job.L}/audio_plan.json`)",
+        *(["- Debug labels at 4 cuts:"] + lab_rows if debug else ["- Debug labels: run with --debug"
+                                                                  + (" (this run: --audio-only)" if "--audio-only" in sys.argv else "")])]))
+
+
 def main():
     job = job_from_argv()
+    if job.L:
+        return render_v2(job, "--debug" in sys.argv)
     edl, al = job.load("edl.json"), job.load("alignment.json")
     song_len = al["song_len"]
     if "--check-only" in sys.argv:

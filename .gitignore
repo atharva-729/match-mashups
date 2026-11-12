@@ -11,3 +11,10 @@ outputs/
 __pycache__/
 *.pyc
 config.yaml
+*.m4a
+*.webm
+*.opus
+*.aac
+# screenshots that show broadcast frames stay local (footage never goes in git)
+logs/v2_visual_*.png
+logs/v2_player_*.png

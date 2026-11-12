@@ -1,5 +1,9 @@
 """Run every phase for one job:
   python run.py inputs/<job> [--from align|fetch|box|tag|plan|render] [--reocr] [--refetch] [--debug]
+v2 (NFL demo flow: 60 s + 120 s summaries, game sound / song stems, captions, timeline for the player):
+  python run.py inputs/<job> --v2 [--from ...] [--debug]     the footage phases (fetch/box/tag) as above, then per length
+                                                             align -> plan -> render stems -> caption check -> timeline
+  python run.py --serve                                      the local player: http://127.0.0.1:8765/player/
 
 fetch runs only for a job with `replay_url` in job.yaml (footage built from a full-game replay) and only once: it is
 skipped while inputs/<job>/part1.mp4 and inputs/<job>/replay/reel.json exist, unless --refetch. --debug also renders
@@ -19,7 +23,56 @@ SCRIPT = {"align": "align.py", "fetch": "fetch_replay.py", "box": "pick_box.py",
           "plan": "plan_edit.py", "render": "render.py"}
 
 
+V2_PHASES = ["song", "align", "fetch", "box", "tag", "plan", "render", "captions", "timeline"]
+
+
+def run_v2(job, name, cfg):
+    """v2: the song + windows once, the footage once (shared), then everything per length."""
+    import time, yaml
+    py = sys.executable
+    sc = lambda f: str(ROOT / "scripts" / f)
+    t_all = time.time()
+    dbg = ["--debug"] if "--debug" in sys.argv else []
+    subprocess.run([py, sc("pick_song.py"), job], check=True)
+    for L in (60, 120):                       # alignment needs no footage: first, so the footage phases can read it
+        subprocess.run([py, sc("align.py"), job, "--len", str(L)], check=True)
+    if cfg.get("replay_url"):
+        built = (ROOT / "inputs" / name / "part1.mp4").exists() and (ROOT / "inputs" / name / "replay/reel.json").exists()
+        if not built or "--refetch" in sys.argv:
+            subprocess.run([py, sc("fetch_replay.py"), job], check=True)
+    if not (ROOT / "work" / name / "box.json").exists():
+        subprocess.run([py, sc("pick_box.py"), job], check=True)
+        sys.exit(f"Box proposed: look at work/{name}/box_preview.jpg, then\n"
+                 f"  python scripts/pick_box.py {job} --confirm \"ok\"   and rerun with --v2")
+    if not (ROOT / "work" / name / "clips.json").exists() or "--refetch" in sys.argv:
+        subprocess.run([py, sc("tag_shots.py"), job], check=True)
+    for L in (60, 120):
+        for ph, script, extra in (("plan", "plan_edit.py", []), ("render", "render.py", dbg)):
+            t0 = time.time()
+            print(f"=== {L} s · {ph} ===", flush=True)
+            subprocess.run([py, sc(script), job, "--len", str(L), *extra], check=True)
+            print(f"=== {L} s · {ph}: {time.time() - t0:.0f} s ===", flush=True)
+        if (ROOT / "captions" / f"{name}_{L}.json").exists():
+            subprocess.run([py, sc("captions.py"), job, "--len", str(L), "--check"])
+        else:
+            subprocess.run([py, sc("captions.py"), job, "--len", str(L), "--brief"], check=True)
+            print(f"  captions/{name}_{L}.json missing: Claude Code writes it from work/{name}/{L}/caption_brief.md")
+        subprocess.run([py, sc("timeline.py"), job, "--len", str(L)], check=True)
+        tts = yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8")).get("TTS_PYTHON")
+        if tts and (ROOT / "captions" / f"{name}_{L}.json").exists():      # Phase 9: optional voice-over
+            tts = str(Path(tts).expanduser())
+            if Path(tts).exists():
+                subprocess.run([tts, sc("voice.py"), job, "--len", str(L)], check=True)
+                subprocess.run([py, sc("timeline.py"), job, "--len", str(L)], check=True)
+    print(f"=== v2, all phases: {time.time() - t_all:.0f} s ===", flush=True)
+
+
 def main():
+    if "--serve" in sys.argv:
+        sys.argv = [sys.argv[0]]
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import serve
+        return serve.main()
     if len(sys.argv) < 2:
         sys.exit(__doc__)
     job = sys.argv[1]
@@ -28,6 +81,8 @@ def main():
     name = Path(job).name
     import time, yaml
     cfg = yaml.safe_load((ROOT / "inputs" / name / "job.yaml").read_text(encoding="utf-8"))
+    if "--v2" in sys.argv:
+        return run_v2(job, name, cfg)
     t_all = time.time()
     for ph in PHASES[PHASES.index(start):]:
         if ph == "fetch":

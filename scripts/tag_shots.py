@@ -31,6 +31,7 @@ from common import job_from_argv, log, stamp
 
 FPS_OCR = 2.0
 STRIP_SAME = 0.03   # a strip counts as unchanged if < 3% of its pixels moved by > 40 (the NFL bug is see-through)
+STRIP_SAME_FIELDS = 0.008   # the same for a style's small opaque fields (FOX 2016)
 ALLOW = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZv-/:.& "
 
 
@@ -103,6 +104,26 @@ def extract_crops(job, part, box):
     return sorted(d.glob("*.png"))
 
 
+# Score-bug styles (v2 Phase 7.5): one shared OCR + parser core, one small config per broadcast style. A style lists
+# the bug's text fields as rectangles (fractions of the box: x0, y0, x1, y1) and how the parser reads them.
+#   cbs2014 (default)  one line '3RD & 6 | CLE 3 | BUF 0 | 2ND 13:02': cut at the quiet column before the clock
+#   fox2016            a small stacked box: team names / scores (away left, home right) / 'quarter clock' / 'down'
+BUG_STYLES = {
+    "fox2016": {"stacked": True,
+                "fields": [[0.0, 0.24, 0.5, 0.47],      # away score
+                           [0.5, 0.24, 1.0, 0.47],      # home score
+                           [0.0, 0.48, 1.0, 0.67],      # quarter + clock
+                           [0.0, 0.67, 1.0, 0.97]]},    # down ('2ND DOWN' / '2ND & 10')
+}
+
+
+def layout(job, crops):
+    """What strips() cuts the bug into for this job: the style's field rectangles, else (CBS-like line) the split
+    column found from the frames."""
+    st = BUG_STYLES.get(job.cfg.get("bug_style", ""))
+    return st["fields"] if st else strip_split(crops, job.league)
+
+
 def strip_split(crops, league):
     """NFL: the column where the bug's fast-changing right end (game clock) begins: the quietest column (least text
     edge, averaged over frames) in 70-90% of the width, i.e. a gap between two fields. None for IPL."""
@@ -122,7 +143,10 @@ def strips(img, league, split=None):
     (down, teams, scores) and its fast part (the game clock). Small strips are upscaled toward the recogniser's 48 px
     line height."""
     h, w = img.shape[:2]
-    if league == "IPL":
+    if isinstance(split, list):                # a style's field rectangles (BUG_STYLES)
+        out = [img[int(y0 * h): max(int(y0 * h) + 1, int(y1 * h)), int(x0 * w): max(int(x0 * w) + 1, int(x1 * w))]
+               for x0, y0, x1, y1 in split]
+    elif league == "IPL":
         z = int(w * IPLParser.ZONE)
         out = [img[: h // 2, :z], img[h // 2:, :z]]
     else:
@@ -164,7 +188,7 @@ def topup_ocr(job, part, box, out, cache):
     todo = [k for k in range(len(crops)) if present[k] and not out["frames"][k]["tokens"]]
     t0 = time.time()
     if todo:
-        split = strip_split(crops, job.league)
+        split = layout(job, crops)
         for k in todo:
             out["frames"][k]["tokens"] = ocr_frames([str(crops[k])], [True], job.league, 0, split)[0][0]
     out["topup"] = {"frames": len(todo), "seconds": round(time.time() - t0)}
@@ -187,7 +211,7 @@ def run_ocr(job, part, box, parser, reocr):
     import time
     max_reuse = 20
     t0 = time.time()
-    split = strip_split(crops, job.league)
+    split = layout(job, crops)
     toks, n_ocr = ocr_frames([str(f) for f in crops], present, job.league, max_reuse, split)
     res = [(toks, n_ocr)]
     nw = 1
@@ -233,7 +257,10 @@ def _ocr_chunk(task):
         for row, st in enumerate(strips(cv2.imread(p), league, split)):
             g = cv2.cvtColor(st, cv2.COLOR_BGR2GRAY).astype(np.int16)
             prev = last.get(row)
-            if prev is not None and k - prev[0] <= max(max_reuse, 20 if row == 0 and split else 0)                     and prev[2].shape == g.shape and (np.abs(g - prev[2]) > 40).mean() < STRIP_SAME:
+            # a style's fields (BUG_STYLES) are small and opaque: a clock going 14:26 -> 14:08 moves < 3% of the strip,
+            # so they get a much stricter threshold (else the old clock is reused and the play is placed late)
+            same = STRIP_SAME_FIELDS if isinstance(split, list) else STRIP_SAME
+            if prev is not None and k - prev[0] <= max(max_reuse, 20 if row == 0 and split else 0)                     and prev[2].shape == g.shape and (np.abs(g - prev[2]) > 40).mean() < same:
                 toks += prev[1]; continue
             t = rec_strip(_READER, st, row); n += 1
             last[row] = (k, t, g)
@@ -339,8 +366,9 @@ class NFLParser:
     """'1ST & 10 CLE 3 BUF 0 3RD 8:07' -> play row p (state p; its result is event step p + 1)."""
     ORD = {"1ST": 1, "2ND": 2, "3RD": 3, "4TH": 4, "0T": 5, "OT": 5}
 
-    def __init__(self, gid):
+    def __init__(self, gid, style=None):
         g = sister.game_json(gid)
+        self.stacked = BUG_STYLES.get(style or "", {}).get("stacked", False)
         self.sb, self.n = g["sb"], g["n_steps"]
         self.home, self.away = g["home"], g["away"]
         plays = sister.nfl_plays(gid)
@@ -353,6 +381,24 @@ class NFLParser:
     def raw(self, tokens):
         if not tokens:
             return None
+        if self.stacked:                           # fields by row: away score, home score, quarter + clock, down
+            by = {}
+            for t in tokens:
+                by.setdefault(int(t[2][1] // 60), []).append(t[0])
+            num = lambda w: re.sub(r"[^\dO]", "", w.upper()).replace("O", "0")      # 'O' read for a zero
+            dig = lambda r: next((num(w) for w in by.get(r, []) if re.fullmatch(r"\d{1,2}", num(w))), "")
+            a, h = dig(0), dig(1)
+            # the quarter row always opens with the quarter: a digit + two letters, lower case on FOX ('3rd', read as
+            # '3pD', '3p0', '380'), glued to the clock: digit -> ordinal, keep the rest ('38011:14' = 3RD 11:14)
+            row2 = " ".join(by.get(2, [])).upper().strip()
+            m = None if re.match(r"\d{1,2}\s*[:.]\s*\d{2}", row2) else re.match(r"([1-4])([^\s:.]{2})\s*(.*)", row2)
+            o = re.match(r"[O0]T\s*(.*)", row2)
+            if m:
+                row2 = f"{['1ST', '2ND', '3RD', '4TH'][int(m.group(1)) - 1]} {m.group(3)}"
+            elif o:
+                row2 = f"OT {o.group(1)}"
+            tokens = ([[" ".join(by.get(3, []))]] + ([[f"{self.away} {a}"]] if a else []) + ([[f"{self.home} {h}"]] if h else [])
+                      + [[w] for w in row2.split()])
         # common misreads of the ordinals (more of them at low resolution: '3R0', 'BR0', 'ZN0', 'I5T', '7ST')
         fix = lambda s: re.sub(r"\b(IST|LST|1S7|I5T|15T|7ST|1ST)\b", "1ST", re.sub(r"\b(ZND|ZN0|2N0|2ND)\b", "2ND",
                        re.sub(r"\b(ATH|4TN|ITH|4TH)\b", "4TH", re.sub(r"\b[3B8]R[O0DV]\b", "3RD", s))))
@@ -376,6 +422,8 @@ class NFLParser:
             if not g:                              # colon lost: three digits right after the quarter ('4TH 332' = 3:32)
                 g = [(int(a), int(b)) for a, b in re.findall(r"(?:1ST|2ND|3RD|4TH)\s*(\d)(\d{2})(?!\d)", txt)
                      if int(b) <= 59]
+            if not g:                              # under a minute FOX shows ':51', read glued as '2ND51' = 0:51
+                g = [(0, int(b)) for b in re.findall(r"(?:1ST|2ND|3RD|4TH)\s*:?(\d{2})(?![\d&])", txt) if int(b) <= 59]
             if g:
                 mm, ss = g[-1]
         if mm is None:
@@ -394,11 +442,11 @@ class NFLParser:
         if q is None and qm:                       # glued line ('BUF73RD8:04' = away 7, 3RD): the last such ordinal
             q = self.ORD[qm[-1].group(1)]
         head = txt[: qm[-1].start()] if qm else txt                 # the scores sit before the quarter
-        dn = re.search(r"(1ST|2ND|3RD|4TH)\s*&\s*(\d{1,2}|G[O0]AL)", txt)
+        dn = re.search(r"(1ST|2ND|3RD|4TH)\s*(?:&\s*(\d{1,2}|G[O0]AL)|D[O0]WN)", txt)   # FOX: '2ND DOWN' (no distance)
         hs = re.search(rf"{self.home}\s*(\d{{1,2}})(?!\d)", head)
         as_ = re.search(rf"{self.away}\s*(\d{{1,2}})(?!\d)", head)
         return {"q": q, "c": mm * 60 + ss, "down": self.ORD.get(dn.group(1)) if dn else None,
-                "togo": (0 if dn.group(2).startswith("G") else int(dn.group(2))) if dn else None,
+                "togo": (None if dn.group(2) is None else 0 if dn.group(2).startswith("G") else int(dn.group(2))) if dn else None,
                 "h": int(hs.group(1)) if hs else None, "a": int(as_.group(1)) if as_ else None, "text": txt}
 
     def __call__(self, tokens):
@@ -416,7 +464,7 @@ class NFLParser:
                     c += 0.2 * (dc - 12)
             elif dc >= -40 and (p == 0 or self.sb["q"][p - 1] != rd["q"] or rd["c"] <= self.sb["c"][p - 1]):
                 # clock running before play p's snap; it can't read more than the previous play's snap clock
-                match = rd["down"] is not None and self.down[p] == rd["down"] and self.togo[p] == rd["togo"]
+                match = rd["down"] is not None and self.down[p] == rd["down"] and rd["togo"] in (None, self.togo[p])
                 c = -dc / 15.0 + (0.3 if match else 0.5)   # a stale down (the bug updates it late) costs a little
             else:
                 continue
@@ -424,7 +472,7 @@ class NFLParser:
                 c += 1.0                       # the bug updates the score late after a TD
             if rd["a"] is not None and rd["a"] != self.sb["a"][p]:
                 c += 1.0                       # the bug updates the score late after a TD
-            if rd["down"] is not None and self.down[p] and (rd["down"] != self.down[p] or rd["togo"] != self.togo[p]):
+            if rd["down"] is not None and self.down[p] and (rd["down"] != self.down[p] or rd["togo"] not in (None, self.togo[p])):
                 c += 1.0
             if self.minor[p]:
                 c += 1.0
@@ -684,7 +732,7 @@ def main():
     clips, ocr_stats = [], {}
     for part in job.parts:
         box = boxes[part.name]["box"]
-        parser = IPLParser(job.gid, box[2]) if job.league == "IPL" else NFLParser(job.gid)
+        parser = IPLParser(job.gid, box[2]) if job.league == "IPL" else NFLParser(job.gid, job.cfg.get("bug_style"))
         shots = detect_shots(job, part)
         print(part.name, len(shots), "shots", flush=True)
         o = run_ocr(job, part, box, parser, reocr)
@@ -715,7 +763,7 @@ def main():
     job.save("clips.json", clips)
 
     # ---- checkpoint 3 ----
-    al = job.load("alignment.json")
+    al = job.alignment_any()
     ev = {e["step"]: e for e in sister.events(job.gid)}
     contact_sheet(job, clips, ev)
     dur = lambda c: c["end"] - c["start"]

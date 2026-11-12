@@ -5,7 +5,10 @@ Uses the sister repo's matcher exactly as its page does (site/index.html buildMa
   iOfJ[j] = mean song index of the path cells at game index j
   t(step) = t0 + lerp(iOfJ, step/(n-1) * (N-1)) / (N-1) * (t1 - t0)
 so the moment timestamps equal the page's. Then: monotonic, beats + onsets, key steps.
-usage: python scripts/align.py inputs/<job>
+v2 (--len 60|120): the song is any file + a window (job.yaml song_file, song_start_<L>, song_end_<L>, written by
+pick_song.py); its curve is the sister repo's energy_curve on that window. The page-parity check runs only for the v1
+run (demo_key, no --len).
+usage: python scripts/align.py inputs/<job> [--len 60|120]
 """
 import numpy as np
 import librosa
@@ -26,8 +29,20 @@ def lerp(arr, x):
     return arr[a] + (arr[b] - arr[a]) * (x - a)
 
 
+def song_window(job):
+    """v2: (samples, sr) of the job's song window (song_file, song_start_<L> .. song_end_<L>)."""
+    x, sr = sister.load_mono(ROOT / job.cfg["song_file"])
+    a, b = job.cfg[f"song_start_{job.L}"], job.cfg[f"song_end_{job.L}"]
+    return x[int(round(a * sr)): int(round(b * sr))], sr
+
+
 def song_curve(job):
-    """The curve the page matched with (demos.json), checked against a fresh analysis of inputs/<job>/song.mp3."""
+    """The curve the page matched with (demos.json), checked against a fresh analysis of inputs/<job>/song.mp3.
+    v2 (--len): the sister repo's energy_curve of the song window instead (no page to check against)."""
+    if job.L:
+        x, sr = song_window(job)
+        e = sister.energy_curve(x, sr)
+        return {"curve": sister.resample(np.asarray(e["curve"]), N), "t0": e["t0"], "t1": e["t1"]}, len(x) / sr
     d = sister.demo(job.cfg["demo_key"])
     x, sr = sister.load_mono(job.song)
     e = sister.energy_curve(x, sr)
@@ -57,7 +72,8 @@ def main():
     full = sister.curve(gid)
     n = full["n_steps"]
     song_t = lambda ioj, x: t0 + lerp(ioj, x * (N - 1)) / (N - 1) * (t1 - t0)
-    dist, i_of_j = mapping(a, sister.index_curve(gid))
+    dist, i_of_j = mapping(a, sister.normalise(list(sister.resample(np.asarray(full["tension"], float), N)))
+                           if job.L else sister.index_curve(gid))
     t_page = np.maximum.accumulate(np.array([song_t(i_of_j, s / (n - 1)) for s in range(n)]))
     imp = story.importance(gid, job.league)
     if mode == "story":
@@ -69,7 +85,11 @@ def main():
         t, game_curve = t_page, None
 
     # beats and onsets
-    y, sr = librosa.load(str(job.song), sr=22050, mono=True)
+    if job.L:
+        y, sr0 = song_window(job)
+        y, sr = librosa.resample(np.asarray(y, np.float32), orig_sr=sr0, target_sr=22050), 22050
+    else:
+        y, sr = librosa.load(str(job.song), sr=22050, mono=True)
     _, beats = librosa.beat.beat_track(y=y, sr=sr, units="time")
     onsets = librosa.onset.onset_detect(y=y, sr=sr, units="time", backtrack=False)
     # percussive hits with their strength (drums, timpani, accents): where a big moment should land
@@ -112,11 +132,27 @@ def main():
     mono = bool(np.all(np.diff(t) >= 0))
     start_ok, end_ok = t[0] <= 0.05 * song_len, t[-1] >= 0.95 * song_len
     ms = [m["step"] for m in g["moments"]]
-    js = sister.page_moment_times(job.cfg["demo_key"], gid, ms)      # the page's own JS, run under node
-    page_diff = max(abs(t[s] - v) for s, v in zip(ms, js))
-    page_ok = page_diff <= 1.0 or mode == "story"      # story mode leaves the page's mapping on purpose
+    if job.L or not job.cfg.get("demo_key"):     # v2 window: no page to compare with
+        js, page_diff, page_ok = [t[s] for s in ms], 0.0, True
+    else:
+        js = sister.page_moment_times(job.cfg["demo_key"], gid, ms)      # the page's own JS, run under node
+        page_diff = max(abs(t[s] - v) for s, v in zip(ms, js))
+        page_ok = page_diff <= 1.0 or mode == "story"      # story mode leaves the page's mapping on purpose
     plot(job, d, full, t, key, song_len, game_curve)
     ok = mono and start_ok and end_ok and page_ok
+    if job.L:
+        cover = (t[-1] - t[0]) / song_len
+        L_ok = abs(song_len - job.L) <= 0.5
+        ok = mono and cover >= 0.95 and L_ok
+        log("\n".join([
+            f"### {stamp()} · Checkpoint 1 ({job.tag}): {'PASS' if ok else 'FAIL'}",
+            f"- {g['title']} ↔ “{job.cfg.get('song_title', job.cfg['song_track'])}” window "
+            f"{job.cfg[f'song_start_{job.L}']:.2f}–{job.cfg[f'song_end_{job.L}']:.2f} s · length {song_len:.2f} s "
+            f"(L ± 0.5: {L_ok}) · alignment {mode} · DTW {dist:.4f} · {n} steps",
+            f"- step → song second monotonic: {mono}; covers {t[0]:.2f}–{t[-1]:.2f} s = {cover:.1%} of the window (≥95%: {cover >= 0.95})",
+            f"- Plot: `logs/{job.name}_{job.L}_alignment.png`",
+            "- Key steps: " + ", ".join(f"{s} {'+'.join(key[s])} @ {mmss(t[s])}" for s in sorted(key))]))
+        return
     lines = [f"### {stamp()} · Checkpoint 1 ({job.name}): {'PASS' if ok else 'FAIL'}",
              f"- {g['title']} ↔ “{job.cfg['song_title']}” · DTW dist {dist:.4f} · {n} steps · song {song_len:.1f} s "
              f"(matched span {t0:.2f}–{t1:.2f} s) · {len(beats)} beats, {len(onsets)} onsets",
@@ -157,7 +193,8 @@ def plot(job, d, full, t, key, song_len, game_curve=None):
     ax2.legend(loc="upper left", fontsize=8)
     fig.suptitle(f"{job.name}: grey lines = every ~4% of game steps; blue = page moments; light = wickets/sixes or TDs/turnovers/FGs",
                  fontsize=9)
-    fig.savefig(ROOT / "logs" / f"{job.name}_alignment.png", dpi=100, bbox_inches="tight")
+    fig.savefig(ROOT / "logs" / (f"{job.name}_{job.L}_alignment.png" if job.L else f"{job.name}_alignment.png"),
+                dpi=100, bbox_inches="tight")
 
 
 if __name__ == "__main__":

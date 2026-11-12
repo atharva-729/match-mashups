@@ -8,8 +8,12 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 
 
+# files that differ per summary length (v2 --len): they live in work/<job>/<L>/ instead of work/<job>/
+VARIANT = {"alignment.json", "edl.json", "plan_report.json", "audio_plan.json"}
+
+
 class Job:
-    def __init__(self, arg):
+    def __init__(self, arg, L=None):
         p = Path(arg)
         self.name = p.name if p.parts else str(arg)
         self.inp = ROOT / "inputs" / self.name
@@ -22,26 +26,48 @@ class Job:
         self.league = self.cfg["league"].upper()
         self.song = self.inp / "song.mp3"
         self.parts = sorted(self.inp.glob("part*.mp4"), key=lambda f: int(f.stem[4:] or 0))
+        self.L = L                 # v2: the summary length (60 / 120 s); None = the v1 single mashup
+        if L:
+            (self.work / str(L)).mkdir(exist_ok=True)
+            self.out_l = self.out / str(L)
+            self.out_l.mkdir(exist_ok=True)
+
+    @property
+    def tag(self):
+        return f"{self.name} · {self.L} s" if self.L else self.name
 
     def wpath(self, name):
+        if self.L and name in VARIANT:
+            return self.work / str(self.L) / name
         return self.work / name
 
     def load(self, name):
         return json.loads(self.wpath(name).read_text(encoding="utf-8"))
 
+    def alignment_any(self):
+        """The v1 alignment, else the v2 120 s one (a v2-only job has no v1 song): for steps / key steps / song length."""
+        for f in (self.work / "alignment.json", self.work / "120" / "alignment.json"):
+            if f.exists():
+                return json.loads(f.read_text(encoding="utf-8"))
+        raise FileNotFoundError(f"no alignment for {self.name}: run align.py (v1) or align.py --len 120 (v2) first")
+
     def save(self, name, obj):
         self.wpath(name).write_text(json.dumps(obj, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
+def arg_len():
+    return int(sys.argv[sys.argv.index("--len") + 1]) if "--len" in sys.argv else None
+
+
 def job_from_argv():
     if len(sys.argv) < 2:
-        sys.exit("usage: python scripts/<phase>.py inputs/<job>")
-    return Job(sys.argv[1])
+        sys.exit("usage: python scripts/<phase>.py inputs/<job> [--len 60|120]")
+    return Job(sys.argv[1], arg_len())
 
 
 def log(text):
-    """Append to logs/progress.md (the README's checkpoint log)."""
-    f = ROOT / "logs/progress.md"
+    """Append to the checkpoint log: logs/progress.md (v1), or logs/progress_v2.md for a v2 run (--len)."""
+    f = ROOT / ("logs/progress_v2.md" if arg_len() else "logs/progress.md")
     f.parent.mkdir(exist_ok=True)
     with open(f, "a", encoding="utf-8") as fh:
         fh.write(text.rstrip() + "\n\n")
