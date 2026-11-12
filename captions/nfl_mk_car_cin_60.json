@@ -1,13 +1,13 @@
 [
- {"start": 0.3, "end": 3.3, "step": 17, "text": "Newton to Benjamin. 7-0."},
- {"start": 7.6, "end": 10.6, "step": 34, "text": "Dalton answers. 7-7."},
- {"start": 11.3, "end": 14.3, "step": 41, "text": "Bernard, 89 yards."},
- {"start": 15.8, "end": 18.8, "step": 89, "text": "Dalton picked off."},
+ {"start": 0.4, "end": 3.4, "step": 17, "text": "Newton to Benjamin. 7-0."},
+ {"start": 9.1, "end": 12.1, "step": 34, "text": "Dalton answers. 7-7."},
+ {"start": 13.2, "end": 16.2, "step": 41, "text": "Bernard, 89 yards."},
+ {"start": 16.8, "end": 19.1, "step": 89, "text": "Dalton picked off."},
  {"start": 23.3, "end": 26.3, "step": 106, "text": "Cam runs it in. 24-17."},
  {"start": 29.8, "end": 32.8, "step": 131, "text": "Sanu, 34 yards. 24-24."},
  {"start": 33.5, "end": 36.5, "step": 147, "text": "Olsen scores. 31-24."},
- {"start": 36.9, "end": 39.9, "step": 150, "text": "Hill answers. 31-31."},
+ {"start": 37.1, "end": 40.1, "step": 150, "text": "Hill answers. 31-31."},
  {"start": 40.3, "end": 43.3, "step": 155, "text": "Cam picked off late."},
- {"start": 45.5, "end": 48.5, "step": 193, "text": "Overtime. Bengals kick. 37-34."},
- {"start": 53.9, "end": 56.9, "step": 208, "text": "Gano answers. 37-37."}
+ {"start": 45.4, "end": 48.4, "step": 193, "text": "Overtime. Bengals kick. 37-34."},
+ {"start": 53.8, "end": 56.8, "step": 208, "text": "Gano answers. 37-37."}
 ]

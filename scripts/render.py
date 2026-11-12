@@ -160,7 +160,7 @@ def render_v2(job, debug):
     edl, al = job.load("edl.json"), job.load("alignment.json")
     L, out, work = al["song_len"], job.out_l, job.work / str(job.L)
     fps = fps_of(job.parts[0])
-    ev = {e["step"]: e for e in sister.events(job.gid)}
+    ev = {e["step"]: e for e in sister.events(job.gid)} if job.league != "NASCAR" else {}
     t0 = time.time()
     inputs, chain = video_graph(job, edl, fps)
     audio_only = "--audio-only" in sys.argv          # iterate on the sound without re-encoding the picture
@@ -178,8 +178,10 @@ def render_v2(job, debug):
              "-t", f"{L:.3f}", *ENC, "-r", str(fps), "-movflags", "+faststart", str(out / name)], cwd=work)
     t_v = time.time() - t0
     a, b = job.cfg[f"song_start_{job.L}"], job.cfg[f"song_end_{job.L}"]
-    run(["ffmpeg", "-v", "error", "-y", "-ss", f"{a:.3f}", "-t", f"{L:.3f}", "-i", str(ROOT / job.cfg["song_file"]),
-         "-vn", "-af", f"afade=t=in:d=1.5,afade=t=out:st={L - 1.5:.3f}:d=1.5,loudnorm=I=-16:TP=-1.5:LRA=11",
+    tempo = float(job.cfg.get(f"song_tempo_{job.L}", 1.0))
+    at = f"atempo={tempo:.4f}," if abs(tempo - 1.0) > 1e-3 else ""
+    run(["ffmpeg", "-v", "error", "-y", "-ss", f"{a:.3f}", "-t", f"{L * tempo + 0.5:.3f}", "-i", str(ROOT / job.cfg["song_file"]),
+         "-vn", "-af", f"{at}afade=t=in:d=1.5,afade=t=out:st={L - 1.5:.3f}:d=1.5,loudnorm=I=-16:TP=-1.5:LRA=11",
          "-ar", "44100", "-c:a", "aac", "-b:a", "192k", "-t", f"{L:.3f}", str(out / "song.m4a")])
     t1 = time.time()
     plan = game_audio.build(job, edl, job.L, out / "game.m4a")
@@ -247,7 +249,7 @@ def main():
         return check(job, al, edl, song_len, {e["step"]: e for e in sister.events(job.gid)},
                      (job.out / "mashup_debug.mp4").exists())
     fps = fps_of(job.parts[0])
-    ev = {e["step"]: e for e in sister.events(job.gid)}
+    ev = {e["step"]: e for e in sister.events(job.gid)} if job.league != "NASCAR" else {}
     debug = "--debug" in sys.argv
     import time
     t0 = time.time()

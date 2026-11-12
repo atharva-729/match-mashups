@@ -31,15 +31,28 @@
     return st.games;
   }
 
+  function spark(v) {           // the game's story curve: how much is happening, start to finish
+    const W = 300, H = 54, n = v.length, mx = Math.max(...v) || 1;
+    const pts = v.map((y, i) => `${((i / (n - 1)) * W).toFixed(1)},${(H - 4 - (y / mx) * (H - 10)).toFixed(1)}`).join(" ");
+    return `<svg class="curve" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+      <polygon points="0,${H} ${pts} ${W},${H}" fill="rgba(242,179,61,.12)"/>
+      <polyline points="${pts}" fill="none" stroke="#f2b33d" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`;
+  }
+
   function renderGallery() {
     const cards = $("cards");
     cards.innerHTML = st.games.map((g) => {
       const [match, when] = g.title.split(" · ");
       const a = g.teams.away, h = g.teams.home;
+      const head = g.sport === "NASCAR"
+        ? `<div class="sport">NASCAR Cup Series</div><div class="teams">${esc(match)}</div>`
+        : `<div class="teams"><span class="chip" style="background:${a.colour}"></span>${esc(a.name)}
+          <span class="vs">@</span><span class="chip" style="background:${h.colour}"></span>${esc(h.name)}</div>`;
       return `<article class="gcard">
-        <div class="teams"><span class="chip" style="background:${a.colour}"></span>${esc(a.name)}
-          <span class="vs">@</span><span class="chip" style="background:${h.colour}"></span>${esc(h.name)}</div>
+        ${head}
         <div><span class="final">${esc(g.final)}</span> <span class="when">· ${esc(when || g.season)}</span></div>
+        ${g.curve ? spark(g.curve) : ""}
+        ${g.story ? `<div class="story">${esc(g.story)}</div>` : ""}
         <div class="song">Song: <b>${esc(g.song.title)}</b> · ${esc(g.song.artist)}</div>
         <div class="row">
           ${g.lengths.map((L) => `<a class="btn" href="#/play/${g.job}/${L}">${L} s</a>`).join("")}
@@ -233,7 +246,7 @@
     if (k === "V") st.visual = !st.visual;
     if (k === "F") {
       if (document.fullscreenElement) document.exitFullscreen();
-      else $("stage").requestFullscreen().catch(() => {});
+      else $("theatre").requestFullscreen().catch(() => {});
       return;
     }
     if (k === "L") {
@@ -251,7 +264,7 @@
     $("tS").title = st.song ? "Playing the song (S for the game sound)" : "Playing the game sound (S for the song)";
     $("tV").classList.toggle("on", st.visual);
     $("credit").classList.toggle("on", st.song);
-    $("vizA").classList.toggle("on", st.visual);
+    $("vizA").classList.toggle("on", st.visual && !(st.tl && st.tl.sport === "NASCAR"));
     $("glow").classList.toggle("on", st.visual);
     if (!st.captions) $("cap").classList.remove("on");
   }
@@ -290,8 +303,9 @@
     $("pAway").textContent = `${Math.round(away * 100)}%`;
     $("pHome").textContent = `${Math.round(wp * 100)}%`;
     const swing = wp - wp0;                                   // > 0: home gaining
-    const col = swing >= 0 ? tm.home.colour : tm.away.colour;
-    const strength = Math.min(1, 0.25 + 0.75 * ten) * Math.min(1, 0.35 + Math.abs(swing) * 6);
+    const col = st.tl.sport === "NASCAR" ? "#f2b33d" : (swing >= 0 ? tm.home.colour : tm.away.colour);
+    const strength = st.tl.sport === "NASCAR" ? Math.min(1, 0.15 + 0.85 * ten)          // a race: tension alone
+      : Math.min(1, 0.25 + 0.75 * ten) * Math.min(1, 0.35 + Math.abs(swing) * 6);
     const px = (3 + 9 * strength).toFixed(1), a = Math.round(90 + 165 * strength).toString(16).padStart(2, "0");
     $("glow").style.boxShadow = `inset 0 0 ${px}cqw ${(+px / 4).toFixed(1)}cqw ${col}${a}`;
   }
@@ -307,6 +321,7 @@
       updateViz(t);
       $("done").style.width = `${Math.min(100, (t / d) * 100)}%`;
       $("knob").style.left = `${Math.min(100, (t / d) * 100)}%`;
+      if (video.buffered.length) $("buf").style.width = `${Math.min(100, (video.buffered.end(video.buffered.length - 1) / d) * 100)}%`;
       $("time").textContent = `${mmss(t)} / ${mmss(d)}`;
       $("playBtn").textContent = video.paused ? "▶" : "❚❚";
       const avg = st.sync.samples ? (st.sync.sum / st.sync.samples) * 1000 : 0;
@@ -333,7 +348,12 @@
     dragging = true; $("scrub").classList.add("drag"); $("scrub").setPointerCapture(e.pointerId);
     seek(scrubAt(e));
   });
-  $("scrub").addEventListener("pointermove", (e) => { if (dragging) seek(scrubAt(e)); });
+  $("scrub").addEventListener("pointermove", (e) => {
+    if (!st.tl) return;
+    const r = $("scrub").getBoundingClientRect(), x = Math.max(0, Math.min(r.width, e.clientX - r.left));
+    $("tip").style.left = `${x}px`; $("tip").textContent = mmss(scrubAt(e));
+    if (dragging) seek(scrubAt(e));
+  });
   const endDrag = () => { dragging = false; $("scrub").classList.remove("drag"); };
   $("scrub").addEventListener("pointerup", endDrag);
   $("scrub").addEventListener("pointercancel", endDrag);

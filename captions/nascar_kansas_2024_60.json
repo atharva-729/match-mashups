@@ -1,0 +1,11 @@
+[
+ {"start": 0.5, "end": 3.5, "step": 1, "text": "Green flag at Kansas."},
+ {"start": 13.6, "end": 16.6, "step": 88, "text": "Bell leads, then Larson."},
+ {"start": 33.0, "end": 36.0, "step": 120, "text": "Reddick takes the lead."},
+ {"start": 36.3, "end": 38.7, "step": 183, "text": "Busch grabs the lead."},
+ {"start": 38.9, "end": 41.9, "step": 184, "text": "Four-car crash. Caution."},
+ {"start": 43.6, "end": 46.6, "step": 206, "text": "Hamlin, then Buescher, lead."},
+ {"start": 47.6, "end": 50.6, "step": 208, "text": "Lead changes keep coming."},
+ {"start": 51.1, "end": 54.1, "step": 266, "text": "Overtime restart. Buescher leads."},
+ {"start": 55.0, "end": 58.0, "step": 268, "text": "Larson by 0.001 seconds."}
+]

@@ -29,10 +29,31 @@ NFL_COLOURS = {
 }
 
 
+def story_curve(job, n=80):
+    """The game's story curve (what the song was matched to), n points, smoothed, 0-1: the gallery's sparkline."""
+    if job.league == "NASCAR":
+        import nascar
+        lv = np.asarray(nascar.race(job)["level"], float)
+    else:
+        import story
+        lv = np.asarray(story.story(job.gid, job.league)[1], float)
+    lv = np.convolve(np.pad(lv, (4, 4), mode="edge"), np.ones(9) / 9, mode="same")[4:-4]
+    v = np.interp(np.linspace(0, len(lv) - 1, n), np.arange(len(lv)), lv)
+    v = (v - v.min()) / max(1e-6, np.ptp(v))
+    return [round(float(x), 3) for x in v]
+
+
 def build(job):
     al, edl = job.load("alignment.json"), job.load("edl.json")
-    g = sister.game_json(job.gid)
-    c = sister.curve(job.gid)
+    if job.league == "NASCAR":          # a race: no win probability; the glow follows the race's tension
+        import nascar
+        r = nascar.race(job)
+        g = {"title": r["meta"]["title"], "final": r["meta"]["final"], "season": job.cfg.get("season"),
+             "home": "", "home_name": "", "away": "", "away_name": ""}
+        c = {"wp": [0.5] * (r["laps"] + 1), "tension": r["tension"], "week": None}
+    else:
+        g = sister.game_json(job.gid)
+        c = sister.curve(job.gid)
     L = al["song_len"]
     wp = np.asarray(c["wp"], float)
     ten = np.asarray(c["tension"], float)
@@ -53,7 +74,7 @@ def build(job):
     t = library.track(job.cfg["song_track"])
     out = {
         "job": job.name, "length": job.L, "duration": round(L, 3), "rate": RATE,
-        "title": g["title"], "final": g["final"], "season": g["season"],
+        "title": g["title"], "final": g["final"], "season": g["season"], "sport": job.league,
         "week": c.get("week"), "league": job.league,
         "teams": {side: {"abbr": g[side], "name": g[f"{side}_name"], "colour": NFL_COLOURS.get(g[side], "#888888")}
                   for side in ("home", "away")},
@@ -65,6 +86,8 @@ def build(job):
         "samples": [[int(steps[i]), round(float(wv[i]), 4), round(float(tv[i]), 4)] for i in range(n)],
         "captions": json.loads(cap_f.read_text(encoding="utf-8")) if cap_f.exists() else [],
         "files": {"video": "video.mp4", "game": "game.m4a", "song": "song.m4a"},
+        "story": job.cfg.get("story_line", ""),
+        "curve": story_curve(job),
     }
     (job.out_l / "timeline.json").write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
     return out
@@ -80,6 +103,7 @@ def gallery():
         tl = json.loads((d / str(lens[-1]) / "timeline.json").read_text(encoding="utf-8"))
         cards.append({"job": d.name, "title": tl["title"], "final": tl["final"], "season": tl["season"],
                       "week": tl["week"], "teams": tl["teams"], "song": tl["song"], "youtube": tl["youtube"],
+                      "story": tl.get("story", ""), "curve": tl.get("curve"), "sport": tl.get("sport", "NFL"),
                       "lengths": lens})
     (ROOT / "outputs" / "gallery.json").write_text(json.dumps(cards, ensure_ascii=False, indent=1), encoding="utf-8")
     return cards

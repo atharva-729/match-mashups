@@ -34,7 +34,11 @@ def main():
     if all(f"song_start_{L}" in cfg for L in LENGTHS) and "--force" not in sys.argv:
         print("song already chosen (job.yaml); --force to search again")
         return
-    _, level, _ = story.story(job.gid, job.league)
+    if job.league == "NASCAR":
+        import nascar
+        level = nascar.race(job)["level"]
+    else:
+        _, level, _ = story.story(job.gid, job.league)
     lines = [f"### {stamp()} · Song ({job.name})"]
     if cfg.get("song_fixed"):
         tid = cfg["song_track"]

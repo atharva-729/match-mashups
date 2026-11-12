@@ -1,0 +1,16 @@
+[
+ {"start": 0.5, "end": 3.5, "step": 1, "text": "Green flag at Kansas."},
+ {"start": 26.9, "end": 29.9, "step": 40, "text": "Chastain leads early."},
+ {"start": 35.3, "end": 38.3, "step": 88, "text": "Bell, then Larson, take over."},
+ {"start": 54.8, "end": 57.8, "step": 120, "text": "Reddick takes the lead."},
+ {"start": 67.6, "end": 70.6, "step": 170, "text": "Larson leads again."},
+ {"start": 71.7, "end": 74.7, "step": 172, "text": "Restart after stage two."},
+ {"start": 74.9, "end": 77.9, "step": 184, "text": "Busch grabs the lead."},
+ {"start": 78.0, "end": 81.0, "step": 184, "text": "Four-car crash. Caution."},
+ {"start": 86.2, "end": 89.2, "step": 197, "text": "A spin, another caution."},
+ {"start": 90.7, "end": 93.7, "step": 208, "text": "Hamlin, then Buescher, lead."},
+ {"start": 98.0, "end": 101.0, "step": 213, "text": "Hamlin back in front."},
+ {"start": 107.9, "end": 110.9, "step": 266, "text": "Overtime restart. Buescher leads."},
+ {"start": 111.0, "end": 114.0, "step": 266, "text": "Larson and Buescher, side by side."},
+ {"start": 115.4, "end": 118.4, "step": 268, "text": "Larson by 0.001 seconds."}
+]

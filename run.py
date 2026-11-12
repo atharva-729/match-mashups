@@ -52,7 +52,9 @@ def run_v2(job, name, cfg):
             print(f"=== {L} s · {ph} ===", flush=True)
             subprocess.run([py, sc(script), job, "--len", str(L), *extra], check=True)
             print(f"=== {L} s · {ph}: {time.time() - t0:.0f} s ===", flush=True)
-        if (ROOT / "captions" / f"{name}_{L}.json").exists():
+        if cfg.get("league", "").upper() == "NASCAR" and not (ROOT / "captions" / f"{name}_{L}.json").exists():
+            print(f"  captions/{name}_{L}.json missing: Claude Code writes it from the race events (work/{name}/race.json)")
+        elif (ROOT / "captions" / f"{name}_{L}.json").exists():
             subprocess.run([py, sc("captions.py"), job, "--len", str(L), "--check"])
         else:
             subprocess.run([py, sc("captions.py"), job, "--len", str(L), "--brief"], check=True)

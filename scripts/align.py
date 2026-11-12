@@ -33,7 +33,12 @@ def song_window(job):
     """v2: (samples, sr) of the job's song window (song_file, song_start_<L> .. song_end_<L>)."""
     x, sr = sister.load_mono(ROOT / job.cfg["song_file"])
     a, b = job.cfg[f"song_start_{job.L}"], job.cfg[f"song_end_{job.L}"]
-    return x[int(round(a * sr)): int(round(b * sr))], sr
+    y = x[int(round(a * sr)): int(round(b * sr))]
+    tempo = float(job.cfg.get(f"song_tempo_{job.L}", 1.0))
+    if abs(tempo - 1.0) > 1e-3:            # e.g. Mountain King 60 s: 72 s of the piece at 1.2x so the crescendo fits
+        import librosa
+        y = librosa.effects.time_stretch(np.asarray(y, np.float32), rate=tempo)
+    return y, sr
 
 
 def song_curve(job):
@@ -64,6 +69,9 @@ def mapping(a, b):
 
 def main():
     job = job_from_argv()
+    if job.league == "NASCAR":
+        import nascar
+        return nascar.align(job)
     gid = job.gid
     mode = job.cfg.get("alignment", "page")         # page = the live page's tension match; story = story.py
     d, song_len = song_curve(job)

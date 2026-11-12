@@ -42,7 +42,15 @@ def detect_shots(job, part):
         return json.loads(cache.read_text())
     from scenedetect import detect, ContentDetector
     scenes = detect(str(part), ContentDetector(threshold=27))
-    shots = [[round(a.get_seconds(), 3), round(b.get_seconds(), 3)] for a, b in scenes]
+    # scenedetect counts frames and assumes a constant rate; a reel joined from downloaded sections can be variable
+    # frame rate (avg 32.7 fps on a nominal 30), and then every cut drifts later through the reel. Map frame numbers
+    # to the frames' real presentation times instead (packet pts, sorted: no decoding needed).
+    r = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time",
+                        "-of", "csv=p=0", str(part)], capture_output=True, text=True, check=True)
+    pts = np.sort(np.array([float(v.split(",")[0]) for v in r.stdout.split() if v.split(",")[0] not in ("", "N/A")]))
+    pts -= pts[0] if len(pts) else 0.0
+    at = lambda fn: float(pts[min(fn, len(pts) - 1)]) if fn < len(pts) else float(pts[-1]) + (fn - len(pts) + 1) / 30
+    shots = [[round(at(a.get_frames()), 3), round(at(b.get_frames()), 3)] for a, b in scenes]
     cache.write_text(json.dumps(shots))
     return shots
 
@@ -109,6 +117,9 @@ def extract_crops(job, part, box):
 #   cbs2014 (default)  one line '3RD & 6 | CLE 3 | BUF 0 | 2ND 13:02': cut at the quiet column before the clock
 #   fox2016            a small stacked box: team names / scores (away left, home right) / 'quarter clock' / 'down'
 BUG_STYLES = {
+    # CBS 2012: top bar '2ND & 10 | BAL 0 | SD 7 | 2ND 3:53' (see-through; fields give the strict reuse test)
+    "cbs2012": {"stacked": True,
+                "fields": [[0.470, 0.0, 0.540, 1.0], [0.710, 0.0, 0.775, 1.0], [0.785, 0.0, 1.0, 1.0], [0.090, 0.0, 0.290, 1.0]]},
     # CBS 2021: bottom bar 'CBS | LAC 10 | WSH 6 | 2ND 8:57 | 40 | 2ND & 10' (team codes differ from nflverse: WSH)
     "cbs2021": {"stacked": True,
                 "fields": [[0.240, 0.0, 0.300, 1.0], [0.478, 0.0, 0.535, 1.0], [0.540, 0.0, 0.720, 1.0], [0.800, 0.0, 0.980, 1.0]]},
@@ -568,6 +579,10 @@ def ipl_runs(rows, parser):
 
 
 def tag_part(job, part, shots, frames, parser, league):
+    global OFFBUG
+    # shots without the bug count as replays / reactions only this close to a live shot; a fan upload that keeps its
+    # commercial breaks needs a tight window (job.yaml offbug_window), else the ads come in as 'replays'
+    OFFBUG = float(job.cfg.get("offbug_window", 20))
     for f in frames:
         f["p"] = parser(f["tokens"])
     reads = smooth_states([(f["t"], f["p"]["state"]) for f in frames if f["p"]])
@@ -614,7 +629,9 @@ def tag_part(job, part, shots, frames, parser, league):
     live_t = [(r["start"], r["end"]) for r in rows if r.get("kind") == "live"]
     last_live = None
     for k, r in enumerate(rows):
-        near = any(min(abs(r["start"] - b), abs(r["end"] - a), 0 if (a < r["end"] and b > r["start"]) else 1e9) <= 20
+        near = any(min(abs(r["start"] - b), abs(r["end"] - a), 0 if (a < r["end"] and b > r["start"]) else 1e9) <= OFFBUG
+                   for a, b in live_t) if r.get("kind") != "backwards" else any(
+                   min(abs(r["start"] - b), abs(r["end"] - a), 0 if (a < r["end"] and b > r["start"]) else 1e9) <= 20
                    for a, b in live_t)
         if r.get("kind") == "live":
             last_live = r
@@ -736,6 +753,9 @@ def contact_sheet(job, clips, ev):
 # ---------------------------------------------------------------- main
 def main():
     job = job_from_argv()
+    if job.league == "NASCAR":
+        import nascar
+        return nascar.tag(job)
     reocr = "--reocr" in sys.argv
     boxes = job.load("box.json")
     clips, ocr_stats = [], {}

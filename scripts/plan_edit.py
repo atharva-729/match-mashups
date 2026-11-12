@@ -32,13 +32,14 @@ VMIN, VMIN_KEY_REPLAY = 0.8, 0.75
 # (every wicket / TD / turnover with its delivery and result) at the normal caps.
 CAP = {"key": (1.0, 1.25), "live": (1.25, 1.5), "other": (1.25, 1.75)}
 VMAX = CAP["other"][1]
-MUST = {"IPL": ("wicket", "six"), "NFL": ("td", "turnover", "fg")}
-HIGH = {"IPL": ("swing", "moment"), "NFL": ("swing", "moment")}
+MUST = {"IPL": ("wicket", "six"), "NFL": ("td", "turnover", "fg"), "NASCAR": ("finish", "lead")}
+HIGH = {"IPL": ("swing", "moment"), "NFL": ("swing", "moment"), "NASCAR": ("caution", "restart")}
 HIT_WINDOW = 1.5    # how far a key moment may move to land on a strong hit
 END_HOLD = 4.0      # the last moment lands at least this long before the song ends (its result plays out)
 # the core of a key moment that must be shown: before its event point / after it (seconds of source)
-CORE = {"IPL": (1.2, {"must": 3.5, "high": 3.0}), "NFL": (4.0, {"must": 2.0, "high": 1.5})}
-CORE_SHORT = {"IPL": (1.2, 3.0), "NFL": (3.0, 1.5)}    # v2 60 s summaries
+CORE = {"IPL": (1.2, {"must": 3.5, "high": 3.0}), "NFL": (4.0, {"must": 2.0, "high": 1.5}),
+        "NASCAR": (2.5, {"must": 2.5, "high": 1.5})}
+CORE_SHORT = {"IPL": (1.2, 3.0), "NFL": (3.0, 1.5), "NASCAR": (2.0, 1.5)}    # v2 60 s summaries
 
 
 class Source:
@@ -253,11 +254,14 @@ PRIORITY_NAMES = {1: "page moment", 2: "TD", 3: "turnover", 4: "lead-changing FG
 def priorities(job, steps):
     """v2 Phase 2: step -> priority (1 = keep first). NFL: page moments, TDs, turnovers, lead-changing FGs, other FGs,
     then key steps that are only a win-probability swing. IPL (no v2 runs): wickets 2, sixes 3."""
-    sb = sister.curve(job.gid)["sb"]
+    sb = sister.curve(job.gid)["sb"] if job.league != "NASCAR" else None
     out = {}
     for st in steps:
         w, s = st["why"], st["i"]
         if not w:
+            continue
+        if job.league == "NASCAR":
+            out[s] = 1 if "finish" in w else 2 if "lead" in w else 3 if "caution" in w else 5
             continue
         if "moment" in w:
             out[s] = 1
