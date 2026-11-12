@@ -42,7 +42,7 @@ GEOM = """() => {
   const r = (id) => { const e = document.getElementById(id), b = e.getBoundingClientRect();
     const cs = getComputedStyle(e); return {x: b.left - st.left, y: b.top - st.top, w: b.width, h: b.height, on: parseFloat(cs.opacity) > 0.05}; };
   const [bx, by, bw, bh] = tl.bug;
-  return {bug: {x: bx * sx, y: by * sy, w: bw * sx, h: bh * sy}, vizA: r('vizA'), vizB: r('vizB'), cap: r('cap'), credit: r('credit')};
+  return {bug: {x: bx * sx, y: by * sy, w: bw * sx, h: bh * sy}, vizA: r('vizA'), cap: r('cap'), credit: r('credit')};
 }"""
 
 
@@ -103,15 +103,14 @@ def main():
                     moments = {"lull": lull, "td": td, "end": tl["duration"] - 1.5}
                     pg.evaluate("document.getElementById('video').pause()")
                     overlaps = []
-                    for style in ("A", "B"):
-                        pg.select_option("#vizStyle", style)
+                    for style in ("A",):
                         for name, t in moments.items():
                             pg.evaluate(f"document.getElementById('video').currentTime = {t}")
                             pg.wait_for_timeout(900)
                             if L == g["lengths"][0]:
                                 pg.locator("#stage").screenshot(path=str(ROOT / f"logs/v2_visual_{style}_{name}.png"))
                             geo = pg.evaluate(GEOM)
-                            for el in ("vizA" if style == "A" else "vizB", "cap", "credit"):
+                            for el in ("vizA", "cap", "credit"):
                                 if geo[el]["on"] and geo[el]["w"] > 0 and rect_overlap(geo[el], geo["bug"]):
                                     overlaps.append(f"{style}/{name}/{el}")
                     ok5 &= not overlaps

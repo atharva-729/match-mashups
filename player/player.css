@@ -20,7 +20,7 @@ button { font: inherit; color: inherit; }
 .brand .dot { width: 9px; height: 9px; background: var(--accent); border-radius: 2px; transform: rotate(45deg); }
 .sub { color: var(--ink3); font-size: 13px; }
 
-.view { max-width: 1180px; margin: 0 auto; padding: 22px 24px 40px; }
+.view { max-width: 1800px; margin: 0 auto; padding: 22px 24px 40px; }
 h1 { font: 600 26px var(--display); letter-spacing: .02em; margin: 6px 0 4px; }
 .lede { color: var(--ink2); margin: 0 0 22px; }
 .empty { color: var(--ink2); }
@@ -47,7 +47,7 @@ h1 { font: 600 26px var(--display); letter-spacing: .02em; margin: 6px 0 4px; }
 .stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
 
 /* captions: broadcast lower third, left, well below the score bug */
-.cap { position: absolute; left: 4%; bottom: 9%; max-width: 62%; display: flex; align-items: stretch; opacity: 0; transform: translateY(6px);
+.cap { position: absolute; left: 4%; bottom: 17%; max-width: 62%; display: flex; align-items: stretch; opacity: 0; transform: translateY(6px);
   transition: opacity .15s ease, transform .15s ease; pointer-events: none; }
 .cap.on { opacity: 1; transform: none; }
 .cap .bar { width: .45cqw; min-width: 3px; background: var(--accent); }
@@ -60,21 +60,19 @@ h1 { font: 600 26px var(--display); letter-spacing: .02em; margin: 6px 0 4px; }
 .credit.on { opacity: 1; }
 .credit b { font: 600 .95cqw var(--display); letter-spacing: .03em; color: #fff; }
 
-/* visual A: thin win-probability strip on the bottom edge */
-.viz-strip { position: absolute; left: 0; right: 0; bottom: 0; height: 2.6%; display: flex; align-items: flex-end; gap: 0; opacity: 0; transition: opacity .3s; pointer-events: none; }
-.viz-strip.on { opacity: 1; }
-.viz-strip .track { position: relative; flex: 1; height: 6px; overflow: visible; background: rgba(8,10,13,.7); }
-.viz-strip .fill-away, .viz-strip .fill-home { position: absolute; top: 0; bottom: 0; transition: width .6s ease, left .6s ease, box-shadow .6s ease, opacity .6s ease; }
-.viz-strip .fill-away { left: 0; }
-.viz-strip .fill-home { right: 0; }
-.viz-strip .knot { position: absolute; top: -2px; width: 2px; height: 10px; background: #fff; transform: translateX(-1px); transition: left .6s ease; border-radius: 1px; }
-.viz-strip .lab { position: absolute; bottom: 9px; font: 600 .85cqw var(--display); letter-spacing: .08em; color: rgba(255,255,255,.65); text-shadow: 0 1px 2px #000; }
-.viz-strip .lab.l { left: .8%; }
-.viz-strip .lab.r { right: .8%; }
-
-/* visual B: small tension sparkline, bottom-right corner (<= 15% of the width) */
-.viz-spark { position: absolute; right: 1.6%; bottom: 3%; width: 14%; height: auto; opacity: 0; transition: opacity .3s; pointer-events: none; }
-.viz-spark.on { opacity: .92; }
+/* visual: momentum glow on the frame's edges + a win-probability bar */
+.glow { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .8s ease, box-shadow 1.2s ease; }
+.glow.on { opacity: 1; }
+.wpbar { position: absolute; left: 3%; right: 3%; bottom: 11.5%; display: flex; align-items: center; gap: 1cqw;
+  opacity: 0; transform: translateY(8px); transition: opacity .4s, transform .4s; pointer-events: none; }
+.wpbar.on { opacity: 1; transform: none; }
+.wpbar .side { display: flex; align-items: baseline; gap: .6cqw; font: 600 1.5cqw var(--display); color: #fff;
+  text-shadow: 0 1px 3px #000; min-width: 9cqw; }
+.wpbar .side.r { justify-content: flex-end; }
+.wpbar .side i { font-style: normal; font-weight: 500; font-size: 1.25cqw; opacity: .85; font-variant-numeric: tabular-nums; }
+.wpbar .track { flex: 1; height: 1cqw; min-height: 8px; display: flex; border-radius: 99px; overflow: hidden;
+  background: rgba(8,10,13,.6); box-shadow: 0 0 0 1px rgba(255,255,255,.15); }
+.wpbar .fa, .wpbar .fh { height: 100%; transition: width .9s ease; }
 
 /* title + end cards (HTML, so the video itself stays raw) */
 .card { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: flex-end; padding: 0 6% 8%;
@@ -117,3 +115,8 @@ h1 { font: 600 26px var(--display); letter-spacing: .02em; margin: 6px 0 4px; }
   .opt { margin-left: 0; }
 }
 .tog:disabled { opacity: .35; cursor: default; }
+
+/* the stage: as big as fits the window at 16:9; fullscreen fills the screen */
+#player .stage { width: min(100%, calc((100vh - 190px) * 16 / 9)); margin: 0 auto; }
+#player .controls, #player .below { width: min(100%, calc((100vh - 190px) * 16 / 9)); margin-left: auto; margin-right: auto; }
+.stage:fullscreen { width: 100vw !important; height: 100vh; aspect-ratio: auto; border-radius: 0; background: #000; }

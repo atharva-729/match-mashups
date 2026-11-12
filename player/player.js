@@ -4,7 +4,7 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const OUT = "../outputs/";
-  const DRIFT_MAX = 0.06, XFADE_MS = 300, TITLE_MS = 2000;
+  const DRIFT_MAX = 0.08, XFADE_MS = 300, TITLE_MS = 2000;
 
   const st = {
     games: [], tl: null, job: null, L: null,
@@ -86,7 +86,6 @@
     $("vizHome").textContent = tl.teams.home.abbr;
     $("fillAway").style.background = tl.teams.away.colour;
     $("fillHome").style.background = tl.teams.home.colour;
-    $("vizStyle").value = st.style;
     const other = otherLength();
     $("tLlabel").textContent = `${L} s` + (other ? ` → ${other}` : "");
     $("tL").disabled = !other;
@@ -178,7 +177,9 @@
       if (a.paused || a.readyState < 2) continue;
       const d = Math.abs(a.currentTime - t);
       if (settled) { st.sync.max = Math.max(st.sync.max, d); st.sync.samples++; st.sync.sum += d; }
-      if (d > DRIFT_MAX) { a.currentTime = t; st.sync.resyncs++; }
+      // resync, then leave that track alone for 0.5 s (a seek needs a moment to settle; resyncing again
+      // straight away makes it thrash)
+      if (d > DRIFT_MAX && performance.now() - (a._resyncAt || 0) > 500) { a.currentTime = t; a._resyncAt = performance.now(); st.sync.resyncs++; }
     }
   }
 
@@ -216,6 +217,11 @@
     if (k === "C") st.captions = !st.captions;
     if (k === "S") { st.song = !st.song; crossfade(st.song); }
     if (k === "V") st.visual = !st.visual;
+    if (k === "F") {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else $("stage").requestFullscreen().catch(() => {});
+      return;
+    }
     if (k === "L") {
       const o = otherLength();
       if (o) { st.carry = { captions: st.captions, song: st.song, visual: st.visual, voiceOn: st.voiceOn }; location.hash = `#/play/${st.job}/${o}`; }
@@ -231,8 +237,8 @@
     $("tS").title = st.song ? "Playing the song (S for the game sound)" : "Playing the game sound (S for the song)";
     $("tV").classList.toggle("on", st.visual);
     $("credit").classList.toggle("on", st.song);
-    $("vizA").classList.toggle("on", st.visual && st.style === "A");
-    $("vizB").classList.toggle("on", st.visual && st.style === "B");
+    $("vizA").classList.toggle("on", st.visual);
+    $("glow").classList.toggle("on", st.visual);
     if (!st.captions) $("cap").classList.remove("on");
   }
 
@@ -251,7 +257,8 @@
     capTimer = setTimeout(() => { $("capText").textContent = caps[i].text; el.classList.add("on"); }, 150);
   }
 
-  /* visual A: tug-of-war strip; B: tension sparkline */
+  /* visual: momentum glow (edges in the colour of the team gaining win probability over the last ~8 s, brighter when
+     the game is tense) + a win-probability bar with live percentages */
   function sample(t) {
     const s = st.tl.samples;
     return s[Math.max(0, Math.min(s.length - 1, Math.floor(t * st.tl.rate)))];
@@ -259,49 +266,22 @@
   let lastViz = -1;
   function updateViz(t) {
     if (!st.visual || !st.tl) return;
-    const k = Math.floor(t * 4);                 // 4 updates a second: nothing moves faster than the game
+    const k = Math.floor(t * 4);
     if (k === lastViz) return;
     lastViz = k;
-    const [, wp, ten] = sample(t);
-    if (st.style === "A") {
-      const lead = Math.abs(wp - 0.5) * 2;       // 0 = even, 1 = decided
-      const home = wp >= 0.5;
-      const w = (lead * 50).toFixed(2) + "%";
-      const fa = $("fillAway"), fh = $("fillHome");
-      fa.style.left = home ? "50%" : `${50 - lead * 50}%`; fa.style.width = home ? "0%" : w;
-      fh.style.right = home ? `${50 - lead * 50}%` : "50%"; fh.style.width = home ? w : "0%";
-      fh.style.left = "auto";
-      $("knot").style.left = `${50 + (wp - 0.5) * 100}%`;
-      const glow = (2 + ten * 14).toFixed(1);
-      const col = home ? st.tl.teams.home.colour : st.tl.teams.away.colour;
-      for (const el of [fa, fh]) { el.style.opacity = (0.5 + 0.5 * ten).toFixed(2); el.style.boxShadow = `0 0 ${glow}px ${col}`; }
-    } else {
-      drawSpark(t);
-    }
+    const [, wp, ten] = sample(t), [, wp0] = sample(Math.max(0, t - 8));
+    const tm = st.tl.teams, away = 1 - wp;
+    $("fillAway").style.width = `${(away * 100).toFixed(1)}%`;
+    $("fillHome").style.width = `${(wp * 100).toFixed(1)}%`;
+    $("pAway").textContent = `${Math.round(away * 100)}%`;
+    $("pHome").textContent = `${Math.round(wp * 100)}%`;
+    const swing = wp - wp0;                                   // > 0: home gaining
+    const col = swing >= 0 ? tm.home.colour : tm.away.colour;
+    const strength = Math.min(1, 0.25 + 0.75 * ten) * Math.min(1, 0.35 + Math.abs(swing) * 6);
+    const px = (3 + 9 * strength).toFixed(1), a = Math.round(90 + 165 * strength).toString(16).padStart(2, "0");
+    $("glow").style.boxShadow = `inset 0 0 ${px}cqw ${(+px / 4).toFixed(1)}cqw ${col}${a}`;
   }
-
-  function drawSpark(t) {
-    const cv = $("vizB"), ctx = cv.getContext("2d");
-    const W = cv.width, H = cv.height, pad = 8;
-    ctx.clearRect(0, 0, W, H);
-    if (!st.tl) return;
-    const s = st.tl.samples, n = s.length;
-    ctx.fillStyle = "rgba(8,10,13,.62)";
-    ctx.beginPath(); ctx.roundRect(0, 0, W, H, 10); ctx.fill();
-    const x = (i) => pad + (i / (n - 1)) * (W - 2 * pad);
-    const y = (v) => H - pad - v * (H - 2 * pad - 14);
-    ctx.beginPath();
-    for (let i = 0; i < n; i += 2) i ? ctx.lineTo(x(i), y(s[i][2])) : ctx.moveTo(x(i), y(s[i][2]));
-    ctx.strokeStyle = "rgba(255,255,255,.75)"; ctx.lineWidth = 2; ctx.stroke();
-    ctx.lineTo(x(n - 1), H - pad); ctx.lineTo(x(0), H - pad); ctx.closePath();
-    ctx.fillStyle = "rgba(255,255,255,.08)"; ctx.fill();
-    const i = Math.min(n - 1, Math.floor(t * st.tl.rate));
-    ctx.fillStyle = "rgba(255,255,255,.5)"; ctx.fillRect(x(i), pad, 1, H - 2 * pad);
-    ctx.beginPath(); ctx.arc(x(i), y(s[i][2]), 5, 0, Math.PI * 2);
-    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--accent"); ctx.fill();
-    ctx.font = "600 16px Bahnschrift, Arial Narrow, sans-serif"; ctx.fillStyle = "rgba(255,255,255,.6)";
-    ctx.fillText("TENSION", pad + 2, pad + 12);
-  }
+  function drawSpark() {}
 
   /* frame loop */
   function frame() {
@@ -326,17 +306,17 @@
   $("bigPlay").onclick = playPause;
   $("again").onclick = replay;
   $("video").onclick = playPause;
+  $("video").ondblclick = () => toggle("F");
   $("scrub").onclick = (e) => {
     if (!st.tl) return;
     const r = e.currentTarget.getBoundingClientRect();
     seek(((e.clientX - r.left) / r.width) * st.tl.duration);
   };
-  for (const id of ["tC", "tS", "tV", "tL"]) $(id).onclick = () => toggle($(id).dataset.key);
-  $("vizStyle").onchange = (e) => { st.style = e.target.value; writePref("vizStyle", st.style); lastViz = -1; paintToggles(); drawSpark(video.currentTime || 0); };
+  for (const id of ["tC", "tS", "tV", "tF", "tL"]) $(id).onclick = () => toggle($(id).dataset.key);
   document.addEventListener("keydown", (e) => {
     if (e.target.tagName === "SELECT" || e.ctrlKey || e.metaKey || e.altKey) return;
     const k = e.key.toUpperCase();
-    if ("CSVL".includes(k) && k.length === 1) { toggle(k); e.preventDefault(); }
+    if ("CSVLF".includes(k) && k.length === 1) { toggle(k); e.preventDefault(); }
     if (e.key === " ") { playPause(); e.preventDefault(); }
   });
 

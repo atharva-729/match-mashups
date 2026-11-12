@@ -30,12 +30,12 @@
 
     <div class="cap" id="cap"><span class="bar"></span><span class="txt" id="capText"></span></div>
 
-    <div class="viz-strip" id="vizA" aria-hidden="true">
-      <div class="lab l" id="vizAway"></div>
-      <div class="track"><div class="fill-away" id="fillAway"></div><div class="fill-home" id="fillHome"></div><div class="knot" id="knot"></div></div>
-      <div class="lab r" id="vizHome"></div>
+    <div class="glow" id="glow" aria-hidden="true"></div>
+    <div class="wpbar" id="vizA" aria-hidden="true">
+      <span class="side l"><b id="vizAway"></b><i id="pAway"></i></span>
+      <div class="track"><div class="fa" id="fillAway"></div><div class="fh" id="fillHome"></div></div>
+      <span class="side r"><i id="pHome"></i><b id="vizHome"></b></span>
     </div>
-    <canvas class="viz-spark" id="vizB" width="360" height="120" aria-hidden="true"></canvas>
 
     <div class="card title" id="titleCard">
       <div class="kicker">Summary of the full game</div>
@@ -61,15 +61,13 @@
       <button class="tog" id="tC" data-key="C"><b>C</b>Captions</button>
       <button class="tog" id="tS" data-key="S"><b>S</b><span id="tSlabel">Song</span></button>
       <button class="tog" id="tV" data-key="V"><b>V</b>Visual</button>
+      <button class="tog" id="tF" data-key="F" title="Fullscreen"><b>F</b>Full</button>
       <button class="tog len" id="tL" data-key="L"><b>L</b><span id="tLlabel">60 s</span></button>
     </div>
   </div>
   <div class="below">
     <a href="#/" class="back">← All games</a>
     <a class="yt small" id="ytLink" target="_blank" rel="noopener">Original game on YouTube ↗</a>
-    <label class="opt">Visual
-      <select id="vizStyle"><option value="A">Win-probability strip</option><option value="B">Tension sparkline</option></select>
-    </label>
     <span class="drift" id="drift" title="audio / video sync"></span>
   </div>
 </main>
