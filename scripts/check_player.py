@@ -41,7 +41,7 @@ GEOM = """() => {
   const tl = window.__mm.tl, sx = st.width / tl.video_size[0], sy = st.height / tl.video_size[1];
   const r = (id) => { const e = document.getElementById(id), b = e.getBoundingClientRect();
     const cs = getComputedStyle(e); return {x: b.left - st.left, y: b.top - st.top, w: b.width, h: b.height, on: parseFloat(cs.opacity) > 0.05}; };
-  const [bx, by, bw, bh] = tl.bug;
+  const [bx, by, bw, bh] = tl.bug || [0, 0, 0, 0];
   return {bug: {x: bx * sx, y: by * sy, w: bw * sx, h: bh * sy}, vizA: r('vizA'), cap: r('cap'), credit: r('credit')};
 }"""
 

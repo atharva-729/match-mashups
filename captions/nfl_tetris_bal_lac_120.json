@@ -1,0 +1,16 @@
+[
+ {"start": 0.5, "end": 3.5, "step": 10, "text": "Herbert runs it in first."},
+ {"start": 19.9, "end": 22.9, "step": 46, "text": "Henry and Lamar march."},
+ {"start": 30.0, "end": 33.0, "step": 52, "text": "Lamar answers on the ground."},
+ {"start": 42.1, "end": 44.1, "step": 60, "text": "Chargers drive before the half."},
+ {"start": 44.5, "end": 47.5, "step": 70, "text": "Bateman, 40 yards. Ravens lead."},
+ {"start": 56.5, "end": 58.5, "step": 79, "text": "52-yarder at the half. 14-13."},
+ {"start": 58.7, "end": 61.6, "step": 92, "text": "Tucker answers. 17-13."},
+ {"start": 72.8, "end": 75.8, "step": 104, "text": "Another 52-yarder. 17-16."},
+ {"start": 83.0, "end": 85.8, "step": 109, "text": "Henry breaks loose."},
+ {"start": 87.0, "end": 90.0, "step": 119, "text": "Andrews scores. 23-16."},
+ {"start": 92.0, "end": 95.0, "step": 132, "text": "Hill, 51 yards. 30-16."},
+ {"start": 102.2, "end": 105.2, "step": 138, "text": "Chargers can't answer."},
+ {"start": 107.0, "end": 110.0, "step": 166, "text": "Chargers score late. 30-23."},
+ {"start": 117.0, "end": 119.5, "step": 170, "text": "Lamar kneels it out."}
+]

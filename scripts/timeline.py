@@ -59,7 +59,8 @@ def build(job):
                   for side in ("home", "away")},
         "song": {"title": t["title"], "artist": t["artist"], "credit": job.cfg.get("song_credit_full", t["credit"])},
         "youtube": job.cfg.get("replay_url"),
-        "bug": [2 * v for v in job.cfg["replay_box_360"]] if "replay_box_360" in job.cfg else None,
+        "bug": (json.loads(job.wpath("box.json").read_text())["part1.mp4"]["box"] if job.wpath("box.json").exists()
+                else [2 * v for v in job.cfg["replay_box_360"]] if "replay_box_360" in job.cfg else None),
         "video_size": [1280, 720],
         "samples": [[int(steps[i]), round(float(wv[i]), 4), round(float(tv[i]), 4)] for i in range(n)],
         "captions": json.loads(cap_f.read_text(encoding="utf-8")) if cap_f.exists() else [],

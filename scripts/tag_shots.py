@@ -109,6 +109,15 @@ def extract_crops(job, part, box):
 #   cbs2014 (default)  one line '3RD & 6 | CLE 3 | BUF 0 | 2ND 13:02': cut at the quiet column before the clock
 #   fox2016            a small stacked box: team names / scores (away left, home right) / 'quarter clock' / 'down'
 BUG_STYLES = {
+    # CBS 2021: bottom bar 'CBS | LAC 10 | WSH 6 | 2ND 8:57 | 40 | 2ND & 10' (team codes differ from nflverse: WSH)
+    "cbs2021": {"stacked": True,
+                "fields": [[0.240, 0.0, 0.300, 1.0], [0.478, 0.0, 0.535, 1.0], [0.540, 0.0, 0.720, 1.0], [0.800, 0.0, 0.980, 1.0]]},
+    # ESPN 2024 (MNF): one bottom bar, team logos instead of names: '[logo] 7-4  14 | 13  7-3 [logo] | 3RD 13:35 | 40 | 3RD & 9'
+    "espn2024": {"stacked": True,
+                 "fields": [[0.012, 0.0, 0.084, 1.0],     # away score
+                            [0.114, 0.0, 0.199, 1.0],     # home score
+                            [0.464, 0.0, 0.657, 1.0],     # quarter + clock
+                            [0.753, 0.0, 0.994, 1.0]]},   # down & distance
     "fox2016": {"stacked": True,
                 "fields": [[0.0, 0.24, 0.5, 0.47],      # away score
                            [0.5, 0.24, 1.0, 0.47],      # home score

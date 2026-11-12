@@ -82,6 +82,7 @@
     $("eLink").href = tl.youtube || "#"; $("eLink").textContent = tl.youtube || "";
     $("credit").innerHTML = `♪ <b>${esc(tl.song.title)}</b><br>${esc(tl.song.credit)}`;
     placeCredit(tl);
+    placeLower(tl);
     $("vizAway").textContent = tl.teams.away.abbr;
     $("vizHome").textContent = tl.teams.home.abbr;
     $("fillAway").style.background = tl.teams.away.colour;
@@ -105,6 +106,18 @@
     const room = 100 - ((bx + bw) / W) * 100 - 1.4 - 1.2;       // right margin + a gap to the bug
     if (room >= 15) el.style.maxWidth = `${Math.min(23, room).toFixed(1)}%`;
     else el.style.top = `${(((by + bh) / H) * 100 + 1.5).toFixed(1)}%`;
+  }
+
+  /* the win-probability bar and the captions sit low; when the broadcast's own scoreboard is low too (CBS 2021,
+     ESPN 2024), they move up to sit just above it */
+  function placeLower(tl) {
+    let base = 11.5;
+    if (tl.bug) {
+      const [, by, , bh] = tl.bug, H = tl.video_size[1];
+      if ((by + bh) / H > 0.6) base = Math.max(base, (1 - by / H) * 100 + 1.5);
+    }
+    $("vizA").style.bottom = `${base.toFixed(1)}%`;
+    $("cap").style.bottom = `${(base + 5.5).toFixed(1)}%`;
   }
 
   function otherLength() {
@@ -185,7 +198,8 @@
 
   /* S: crossfade game sound <-> song */
   function applyVolumes() {
-    game.volume = st.vol.game * st.duck; song.volume = st.vol.song * st.duck;
+    const clamp = (v) => Math.max(0, Math.min(1, v));
+    game.volume = clamp(st.vol.game * st.duck); song.volume = clamp(st.vol.song * st.duck);
   }
   /* O: while a voice-over line is spoken, the song (or the game sound) is turned down */
   let lastT = 0;

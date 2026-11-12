@@ -23,6 +23,10 @@ import sister
 from common import ROOT
 
 CACHE = ROOT / "work" / "_library"
+LOCAL = {"cancan": ("Can-Can (Galop infernal)", "Jacques Offenbach", "*Can-Can*.mp3"),
+         "tetris": ("Korobeiniki (Tetris theme), arranged for strings", "Traditional", "*Tetris*.mp3"),
+         "winter": ("The Four Seasons: Winter, I. Allegro non molto", "Antonio Vivaldi", "*Vivaldi*.mp3"),
+         "william_tell": ("William Tell Overture: Finale, arranged for strings", "Gioachino Rossini", "*William Tell*.mp3")}
 STEP = 2            # seconds between candidate window starts
 SNAP_START = 2.0    # a window's start moves to the quietest nearby beat within this many seconds
 SNAP_END = 0.5      # its end to the nearest beat within this (so the length stays L +- 0.5 s)
@@ -53,6 +57,13 @@ def tracks():
                     "performer": d["performer"], "licence": d["licence"], "excerpt": d.get("excerpt"),
                     "credit": f"{d['piece']} ({d['composer']}), {d['performer']}, {d['licence']}, via www.classicals.de",
                     "file": str(sister.MATCH_REPO / "site" / d["file"])})
+    # local recordings Atharva downloaded from classicals.de (inputs/_songs/, gitignored): CC BY-NC 4.0, internal use
+    for key, (title, artist, pattern) in LOCAL.items():
+        hits = sorted((ROOT / "inputs" / "_songs").glob(pattern))
+        if hits:
+            out.append({"id": "local:" + key, "kind": "demo", "title": title, "artist": artist, "performer": "classicals.de",
+                        "licence": "CC BY-NC 4.0", "credit": f"{title} ({artist}), via www.classicals.de, CC BY-NC 4.0",
+                        "file": str(hits[0])})
     eng = _engine()
     if eng:
         with open(eng["root"] / "library/tracks.csv", encoding="utf-8") as f:

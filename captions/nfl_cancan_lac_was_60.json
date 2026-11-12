@@ -1,0 +1,11 @@
+[
+ {"start": 0.3, "end": 3.3, "step": 12, "text": "Ekeler punches it in. 7-0."},
+ {"start": 5.3, "end": 8.3, "step": 28, "text": "Washington kicks a field goal."},
+ {"start": 8.8, "end": 11.8, "step": 42, "text": "And another. 7-6."},
+ {"start": 14.7, "end": 17.7, "step": 54, "text": "Field goals trade. 10-6."},
+ {"start": 19.5, "end": 22.4, "step": 83, "text": "13-6 at the half."},
+ {"start": 30.5, "end": 33.1, "step": 100, "text": "Washington scores. Leads 16-13."},
+ {"start": 35.6, "end": 38.6, "step": 114, "text": "Herbert sacked, fumbles."},
+ {"start": 39.7, "end": 42.7, "step": 134, "text": "Two turnovers in seven seconds."},
+ {"start": 45.4, "end": 48.4, "step": 138, "text": "Herbert to Williams. 20-16."}
+]
