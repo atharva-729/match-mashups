@@ -18,7 +18,7 @@ import sister
 from common import ROOT, job_from_argv, log, mmss, stamp
 
 BANNED = re.compile(r"music|song|sound|quiet|lull|crescendo|beat|tempo", re.I)
-COUNT = {60: (4, 8), 120: (6, 12)}     # few: the game is the focus (Atharva, 2026-11-12)
+COUNT = {60: (7, 12), 120: (11, 18)}     # few: the game is the focus (Atharva, 2026-11-12)
 GAP = (6.0, 10.0)
 
 

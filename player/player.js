@@ -292,6 +292,7 @@
       updateCaption(t);
       updateViz(t);
       $("done").style.width = `${Math.min(100, (t / d) * 100)}%`;
+      $("knob").style.left = `${Math.min(100, (t / d) * 100)}%`;
       $("time").textContent = `${mmss(t)} / ${mmss(d)}`;
       $("playBtn").textContent = video.paused ? "▶" : "❚❚";
       const avg = st.sync.samples ? (st.sync.sum / st.sync.samples) * 1000 : 0;
@@ -307,17 +308,32 @@
   $("again").onclick = replay;
   $("video").onclick = playPause;
   $("video").ondblclick = () => toggle("F");
-  $("scrub").onclick = (e) => {
-    if (!st.tl) return;
-    const r = e.currentTarget.getBoundingClientRect();
-    seek(((e.clientX - r.left) / r.width) * st.tl.duration);
+  // seek bar: click or drag
+  const scrubAt = (e) => {
+    const r = $("scrub").getBoundingClientRect();
+    return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * st.tl.duration;
   };
+  let dragging = false;
+  $("scrub").addEventListener("pointerdown", (e) => {
+    if (!st.tl) return;
+    dragging = true; $("scrub").classList.add("drag"); $("scrub").setPointerCapture(e.pointerId);
+    seek(scrubAt(e));
+  });
+  $("scrub").addEventListener("pointermove", (e) => { if (dragging) seek(scrubAt(e)); });
+  const endDrag = () => { dragging = false; $("scrub").classList.remove("drag"); };
+  $("scrub").addEventListener("pointerup", endDrag);
+  $("scrub").addEventListener("pointercancel", endDrag);
+  const skip = (d) => { if (st.tl) seek(Math.max(0, Math.min(st.tl.duration - 0.1, video.currentTime + d))); };
+  $("back10").onclick = () => skip(-10);
+  $("fwd10").onclick = () => skip(10);
   for (const id of ["tC", "tS", "tV", "tF", "tL"]) $(id).onclick = () => toggle($(id).dataset.key);
   document.addEventListener("keydown", (e) => {
     if (e.target.tagName === "SELECT" || e.ctrlKey || e.metaKey || e.altKey) return;
     const k = e.key.toUpperCase();
     if ("CSVLF".includes(k) && k.length === 1) { toggle(k); e.preventDefault(); }
     if (e.key === " ") { playPause(); e.preventDefault(); }
+    if (e.key === "ArrowLeft") { skip(-10); e.preventDefault(); }
+    if (e.key === "ArrowRight") { skip(10); e.preventDefault(); }
   });
 
   async function route() {

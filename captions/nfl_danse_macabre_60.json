@@ -1,8 +1,11 @@
 [
  {"start": 7.4, "end": 10.4, "step": 28, "text": "Browns strike first. 3-0."},
  {"start": 11.7, "end": 14.7, "step": 46, "text": "Picked off in the end zone."},
+ {"start": 17.3, "end": 20.3, "step": 82, "text": "Another interception."},
  {"start": 21.9, "end": 24.9, "step": 89, "text": "Blocked at the half."},
+ {"start": 25.3, "end": 28.3, "step": 93, "text": "Third interception of the day."},
  {"start": 32.6, "end": 35.6, "step": 107, "text": "Bills finally score."},
  {"start": 36.1, "end": 39.1, "step": 110, "text": "Fumble. Touchdown again. 14-3."},
+ {"start": 43.3, "end": 46.3, "step": 140, "text": "Searcy's second pick. 17-3."},
  {"start": 50.6, "end": 53.6, "step": 153, "text": "Manziel scores. Too late."}
 ]

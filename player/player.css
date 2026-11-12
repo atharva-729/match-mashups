@@ -120,3 +120,9 @@ h1 { font: 600 26px var(--display); letter-spacing: .02em; margin: 6px 0 4px; }
 #player .stage { width: min(100%, calc((100vh - 190px) * 16 / 9)); margin: 0 auto; }
 #player .controls, #player .below { width: min(100%, calc((100vh - 190px) * 16 / 9)); margin-left: auto; margin-right: auto; }
 .stage:fullscreen { width: 100vw !important; height: 100vh; aspect-ratio: auto; border-radius: 0; background: #000; }
+
+.ctl.skip { width: 46px; font: 600 13px var(--display); color: var(--ink2); }
+.scrub { height: 8px; touch-action: none; }
+.scrub .knob { position: absolute; top: 50%; left: 0; width: 14px; height: 14px; border-radius: 50%; background: var(--ink);
+  transform: translate(-50%, -50%); box-shadow: 0 0 0 3px rgba(0,0,0,.4); }
+.scrub:hover .done, .scrub.drag .done { background: var(--accent); }

@@ -4,8 +4,13 @@
  {"start": 48.2, "end": 51.2, "step": 82, "text": "Another interception."},
  {"start": 56.8, "end": 59.8, "step": 89, "text": "Blocked at the half."},
  {"start": 61.3, "end": 64.3, "step": 93, "text": "Third interception of the day."},
+ {"start": 66.1, "end": 69.1, "step": 106, "text": "Fourth down. Huge catch."},
  {"start": 71.0, "end": 74.0, "step": 107, "text": "Bills finally score."},
  {"start": 75.7, "end": 78.7, "step": 110, "text": "Fumble. Touchdown again. 14-3."},
- {"start": 91.6, "end": 94.6, "step": 140, "text": "Searcy's second pick. 17-3."},
- {"start": 101.3, "end": 104.3, "step": 153, "text": "Manziel scores. Too late."}
+ {"start": 84.2, "end": 87.2, "step": 136, "text": "Field goal. 17-3."},
+ {"start": 91.6, "end": 94.6, "step": 140, "text": "Searcy's second pick."},
+ {"start": 96.5, "end": 99.5, "step": 144, "text": "Another field goal. 20-3."},
+ {"start": 101.3, "end": 104.3, "step": 153, "text": "Manziel scores. Too late."},
+ {"start": 106.0, "end": 109.0, "step": 166, "text": "Field goal. 23-10."},
+ {"start": 114.5, "end": 117.5, "step": 177, "text": "Final kick. 26-10."}
 ]
