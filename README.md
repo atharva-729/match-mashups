@@ -243,3 +243,10 @@ song_credit: "via classicals.de"
 **Don't:** don't push footage, frames or rendered videos. Don't create a Pages site for this repo.
 
 **✅ Checkpoint 7:** `git ls-files | grep -Ei '\.(mp4|mov|mkv|mp3|wav|jpg|png)$'` returns only the alignment plots in `logs/` (and nothing from `work/` or `outputs/`), and `SUMMARY.md` exists.
+---
+
+## Beyond NFL and IPL (note, not a phase)
+
+The pipeline isn't tied to football or cricket. Any sport with **(a) a step-by-step data feed** and **(b) an on-screen counter to OCR** can be a new league. Only three pieces are league-specific: the step data and its curve, the scoreboard parser, and which events count as key moments.
+
+- **NASCAR** is the obvious next one. Steps = laps, from NASCAR Race Center's unofficial per-race `lap-times.json` (Sportradar's NASCAR API is the paid production route). The broadcast lap counter is easier to OCR than the IPL bar or the NFL bug. NASCAR has no win probability, so use the **story curve** (`scripts/story.py`), as with IPL: lead changes, restarts and late laps are key, and caution laps are quiet. Not started.
