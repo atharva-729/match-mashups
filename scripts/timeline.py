@@ -65,10 +65,6 @@ def build(job):
         "captions": json.loads(cap_f.read_text(encoding="utf-8")) if cap_f.exists() else [],
         "files": {"video": "video.mp4", "game": "game.m4a", "song": "song.m4a"},
     }
-    vj = job.out_l / "voice.json"
-    if vj.exists() and (job.out_l / "voice.m4a").exists():      # Phase 9: optional voice-over (scripts/voice.py)
-        out["files"]["voice"] = "voice.m4a"
-        out["voice"] = json.loads(vj.read_text(encoding="utf-8"))
     (job.out_l / "timeline.json").write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
     return out
 

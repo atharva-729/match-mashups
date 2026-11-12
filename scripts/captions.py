@@ -5,8 +5,8 @@ checks the result.
             play, and one slot every ~6-10 s in between) with the rows for the step on screen: play text, score and
             margin, quarter and clock, down and distance, win probability before/after, tension around it, and the
             plays just before (to explain a stretch where nothing much happens).
-  --check   Checkpoint 4 on captions/<job>_<L>.json ([{start, end, step, text}]): <= 12 words, no banned words, no
-            all-caps words over 3 letters, at most one "!" per video, 2.5-4 s each, no overlaps, step within +-2 of
+  --check   Checkpoint 4 on captions/<job>_<L>.json ([{start, end, step, text}]): <= 6 words, no banned words, no
+            all-caps words over 3 letters, at most one "!" per video, 2-3.5 s each, no overlaps, step within +-2 of
             the step on screen at `start`, count in range.
 usage: python scripts/captions.py inputs/<job> --len 60|120 --brief|--check
 """
@@ -18,7 +18,7 @@ import sister
 from common import ROOT, job_from_argv, log, mmss, stamp
 
 BANNED = re.compile(r"music|song|sound|quiet|lull|crescendo|beat|tempo", re.I)
-COUNT = {60: (10, 14), 120: (18, 25)}
+COUNT = {60: (4, 8), 120: (6, 12)}     # few: the game is the focus (Atharva, 2026-11-12)
 GAP = (6.0, 10.0)
 
 
@@ -69,7 +69,7 @@ def brief(job):
             out.append((ts, s, kind))
             t = ts
     lines = [f"# Caption brief: {job.name} {job.L} s ({g['title']}); home = {g['home']}, away = {g['away']}",
-             f"Window {L:.1f} s. Write {COUNT[job.L][0]}-{COUNT[job.L][1]} captions, 2.5-4 s each, <= 12 words.", ""]
+             f"Window {L:.1f} s. Write {COUNT[job.L][0]}-{COUNT[job.L][1]} captions, 2-3.5 s each, <= 6 words.", ""]
     for ts, s, kind in out:
         s_on = on_screen(edl, ts)
         info = row_info(job, s, plays, wp, ten, g)
@@ -98,7 +98,7 @@ def check(job):
     for i, c in enumerate(caps):
         w = c["text"].split()
         tag = f"#{i} {mmss(c['start'])} “{c['text']}”"
-        if len(w) > 12:
+        if len(w) > 6:
             probs.append(f"{tag}: {len(w)} words")
         if BANNED.search(c["text"]):
             probs.append(f"{tag}: banned word '{BANNED.search(c['text']).group(0)}'")
@@ -106,7 +106,7 @@ def check(job):
         if caps_w:
             probs.append(f"{tag}: all caps {caps_w}")
         d = c["end"] - c["start"]
-        if not 2.5 - 1e-6 <= d <= 4.0 + 1e-6:
+        if not 2.0 - 1e-6 <= d <= 3.5 + 1e-6:
             probs.append(f"{tag}: lasts {d:.1f} s")
         if i and c["start"] < caps[i - 1]["end"] - 1e-6:
             probs.append(f"{tag}: overlaps the previous caption")

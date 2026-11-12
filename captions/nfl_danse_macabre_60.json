@@ -1,16 +1,8 @@
 [
- {"start": 0.4, "end": 3.4, "step": 12, "text": "Early first quarter, no score. Buffalo's opening drive stalls at midfield."},
- {"start": 7.2, "end": 10.7, "step": 28, "text": "Cleveland gets to the Buffalo 4, then settles for three."},
- {"start": 11.7, "end": 15.5, "step": 46, "text": "Third down at the 7. Leonhard intercepts Orton in the end zone."},
- {"start": 17.3, "end": 21.0, "step": 82, "text": "Browns driving before the half. Searcy picks off Hoyer instead."},
- {"start": 21.9, "end": 24.8, "step": 89, "text": "One second left in the half. A 53-yard try, blocked."},
- {"start": 25.3, "end": 28.7, "step": 93, "text": "Third play of the second half: Haden intercepts Orton at the 30."},
- {"start": 29.0, "end": 32.4, "step": 106, "text": "Fourth and 3, down 3-0: Orton finds Woods deep, to the 3."},
- {"start": 32.6, "end": 35.8, "step": 107, "text": "Hogan's touchdown gives Buffalo its first lead of the day."},
- {"start": 36.1, "end": 39.5, "step": 110, "text": "Four seconds of clock later, West fumbles and Hughes scores."},
- {"start": 39.7, "end": 43.0, "step": 136, "text": "Three straight punts, then a 49-yard field goal. 17-3."},
- {"start": 43.3, "end": 46.7, "step": 140, "text": "Searcy's second interception sets up another field goal."},
- {"start": 47.0, "end": 50.3, "step": 144, "text": "Down 20-3, Cleveland goes to Manziel at quarterback."},
- {"start": 50.6, "end": 53.9, "step": 153, "text": "Manziel scrambles in from 10. Still two scores down."},
- {"start": 54.1, "end": 57.4, "step": 166, "text": "Buffalo runs eight times in nine plays, then kicks again."}
+ {"start": 7.4, "end": 10.4, "step": 28, "text": "Browns strike first. 3-0."},
+ {"start": 11.7, "end": 14.7, "step": 46, "text": "Picked off in the end zone."},
+ {"start": 21.9, "end": 24.9, "step": 89, "text": "Blocked at the half."},
+ {"start": 32.6, "end": 35.6, "step": 107, "text": "Bills finally score."},
+ {"start": 36.1, "end": 39.1, "step": 110, "text": "Fumble. Touchdown again. 14-3."},
+ {"start": 50.6, "end": 53.6, "step": 153, "text": "Manziel scores. Too late."}
 ]

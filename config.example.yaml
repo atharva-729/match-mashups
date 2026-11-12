@@ -5,5 +5,3 @@ MATCH_REPO: ../ipl-song-match
 PYTHON: ~/.venvs/match-mashups/Scripts/python.exe
 # Optional: the Soundtrack Engine repo (596 CC BY 4.0 Kevin MacLeod tracks + their energy curves), for v2 song search
 SOUNDTRACK_REPO: ../soundtrack-engine
-# Optional (v2 Phase 9): a Python with piper-tts for the voice-over (kept apart from the OCR's onnxruntime)
-TTS_PYTHON: ~/.venvs/mm-tts/Scripts/python.exe

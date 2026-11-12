@@ -50,8 +50,8 @@
   }
 
   /* ---------------- player ---------------- */
-  const video = $("video"), game = $("game"), song = $("song"), voice = $("voice");
-  const audios = () => (st.tl && st.tl.files.voice ? [game, song, voice] : [game, song]);
+  const video = $("video"), game = $("game"), song = $("song");
+  const audios = () => [game, song];
 
   async function openPlayer(job, L) {
     teardown();
@@ -64,15 +64,13 @@
     video.src = base + tl.files.video;
     game.src = base + tl.files.game;
     song.src = base + tl.files.song;
-    if (tl.files.voice) voice.src = base + tl.files.voice; else voice.removeAttribute("src");
     st.capIdx = -1; st.ended = false; st.started = false;
     st.sync = { max: 0, resyncs: 0, samples: 0, since: 0, sum: 0 };
     // the demo flow: raw first (game sound on, captions/song/visual off); switching length (L) keeps the toggles
     const carry = st.carry || { captions: false, song: false, visual: false, voiceOn: false };
     st.carry = null;
     st.captions = carry.captions; st.song = carry.song; st.visual = carry.visual;
-    st.voiceOn = carry.voiceOn && !!tl.files.voice; st.duck = 1;
-    $("tO").disabled = !tl.files.voice;
+    st.voiceOn = false; st.duck = 1;
     st.vol = { game: st.song ? 0 : 1, song: st.song ? 1 : 0 }; applyVolumes();
     const [match, when] = tl.title.split(" · ");
     $("tMatch").textContent = match;
@@ -130,7 +128,7 @@
   }
 
   function teardown() {
-    for (const m of [video, game, song, voice]) { m.pause(); m.removeAttribute("src"); m.load(); }
+    for (const m of [video, game, song]) { m.pause(); m.removeAttribute("src"); m.load(); }
     if (st.fade) cancelAnimationFrame(st.fade);
     st.fade = null; st.tl = null;
   }
@@ -187,7 +185,6 @@
   /* S: crossfade game sound <-> song */
   function applyVolumes() {
     game.volume = st.vol.game * st.duck; song.volume = st.vol.song * st.duck;
-    voice.volume = st.voiceOn ? 1 : 0;
   }
   /* O: while a voice-over line is spoken, the song (or the game sound) is turned down */
   let lastT = 0;
@@ -219,7 +216,6 @@
     if (k === "C") st.captions = !st.captions;
     if (k === "S") { st.song = !st.song; crossfade(st.song); }
     if (k === "V") st.visual = !st.visual;
-    if (k === "O" && st.tl.files.voice) { st.voiceOn = !st.voiceOn; applyVolumes(); }
     if (k === "L") {
       const o = otherLength();
       if (o) { st.carry = { captions: st.captions, song: st.song, visual: st.visual, voiceOn: st.voiceOn }; location.hash = `#/play/${st.job}/${o}`; }
@@ -234,7 +230,6 @@
     $("tSlabel").textContent = st.song ? "Song" : "Song";
     $("tS").title = st.song ? "Playing the song (S for the game sound)" : "Playing the game sound (S for the song)";
     $("tV").classList.toggle("on", st.visual);
-    $("tO").classList.toggle("on", st.voiceOn);
     $("credit").classList.toggle("on", st.song);
     $("vizA").classList.toggle("on", st.visual && st.style === "A");
     $("vizB").classList.toggle("on", st.visual && st.style === "B");
@@ -336,12 +331,12 @@
     const r = e.currentTarget.getBoundingClientRect();
     seek(((e.clientX - r.left) / r.width) * st.tl.duration);
   };
-  for (const id of ["tC", "tS", "tV", "tO", "tL"]) $(id).onclick = () => toggle($(id).dataset.key);
+  for (const id of ["tC", "tS", "tV", "tL"]) $(id).onclick = () => toggle($(id).dataset.key);
   $("vizStyle").onchange = (e) => { st.style = e.target.value; writePref("vizStyle", st.style); lastViz = -1; paintToggles(); drawSpark(video.currentTime || 0); };
   document.addEventListener("keydown", (e) => {
     if (e.target.tagName === "SELECT" || e.ctrlKey || e.metaKey || e.altKey) return;
     const k = e.key.toUpperCase();
-    if ("CSVOL".includes(k) && k.length === 1) { toggle(k); e.preventDefault(); }
+    if ("CSVL".includes(k) && k.length === 1) { toggle(k); e.preventDefault(); }
     if (e.key === " ") { playPause(); e.preventDefault(); }
   });
 

@@ -58,12 +58,6 @@ def run_v2(job, name, cfg):
             subprocess.run([py, sc("captions.py"), job, "--len", str(L), "--brief"], check=True)
             print(f"  captions/{name}_{L}.json missing: Claude Code writes it from work/{name}/{L}/caption_brief.md")
         subprocess.run([py, sc("timeline.py"), job, "--len", str(L)], check=True)
-        tts = yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8")).get("TTS_PYTHON")
-        if tts and (ROOT / "captions" / f"{name}_{L}.json").exists():      # Phase 9: optional voice-over
-            tts = str(Path(tts).expanduser())
-            if Path(tts).exists():
-                subprocess.run([tts, sc("voice.py"), job, "--len", str(L)], check=True)
-                subprocess.run([py, sc("timeline.py"), job, "--len", str(L)], check=True)
     print(f"=== v2, all phases: {time.time() - t_all:.0f} s ===", flush=True)
 
 
