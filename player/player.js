@@ -56,7 +56,7 @@
         <div class="song">Song: <b>${esc(g.song.title)}</b> · ${esc(g.song.artist)}</div>
         <div class="row">
           ${g.lengths.map((L) => `<a class="btn" href="#/play/${g.job}/${L}">${L} s</a>`).join("")}
-          ${g.youtube ? `<a class="yt" href="${esc(g.youtube)}" target="_blank" rel="noopener">Original game on YouTube ↗</a>` : ""}
+          ${g.youtube ? `<a class="yt" href="${esc(g.youtube)}" target="_blank" rel="noopener">${esc(g.source_label || "Original game on YouTube")} ↗</a>` : ""}
         </div></article>`;
     }).join("");
     $("empty").hidden = st.games.length > 0;
@@ -90,6 +90,8 @@
     $("tMeta").textContent = `${when || tl.season} · ${L}-second summary · cut automatically from the full broadcast`;
     $("tLink").href = tl.youtube || "#"; $("tLink").hidden = !tl.youtube;
     $("ytLink").href = tl.youtube || "#"; $("ytLink").hidden = !tl.youtube;
+    const lbl = tl.source_label || "Original game on YouTube";
+    $("ytLink").textContent = `${lbl} ↗`; $("tLink").textContent = `${lbl} ↗`;
     $("eFinal").textContent = tl.final;
     $("eSong").textContent = `Song: ${tl.song.credit}`;
     $("eLink").href = tl.youtube || "#"; $("eLink").textContent = tl.youtube || "";

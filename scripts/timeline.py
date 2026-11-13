@@ -26,7 +26,16 @@ NFL_COLOURS = {
     "LAC": "#0080C6", "SD": "#0080C6", "LV": "#A5ACAF", "OAK": "#A5ACAF", "MIA": "#008E97", "MIN": "#7A4FC0",
     "NE": "#C60C30", "NO": "#D3BC8D", "NYG": "#3157C6", "NYJ": "#2E8B57", "PHI": "#1F8A86", "PIT": "#FFB612",
     "SEA": "#69BE28", "SF": "#C9243F", "TB": "#D50A0A", "TEN": "#4B92DB", "WAS": "#B5374A",
+    "GT": "#C9A64A", "LSG": "#3BB4E6",   # IPL
 }
+
+
+def source_label(job):
+    """Credit for the footage: the full broadcast, or the highlights video it was cut from."""
+    if job.cfg.get("replay_url"):
+        return "Original game on YouTube"
+    u = job.cfg.get("highlights_url", "")
+    return "Highlights on iplt20.com" if "iplt20.com" in u else "Highlights on YouTube" if u else ""
 
 
 def story_curve(job, n=80):
@@ -79,7 +88,8 @@ def build(job):
         "teams": {side: {"abbr": g[side], "name": g[f"{side}_name"], "colour": NFL_COLOURS.get(g[side], "#888888")}
                   for side in ("home", "away")},
         "song": {"title": t["title"], "artist": t["artist"], "credit": job.cfg.get("song_credit_full", t["credit"])},
-        "youtube": job.cfg.get("replay_url"),
+        "youtube": job.cfg.get("replay_url") or job.cfg.get("highlights_url"),
+        "source_label": source_label(job),
         "bug": (json.loads(job.wpath("box.json").read_text())["part1.mp4"]["box"] if job.wpath("box.json").exists()
                 else [2 * v for v in job.cfg["replay_box_360"]] if "replay_box_360" in job.cfg else None),
         "video_size": [1280, 720],
@@ -104,6 +114,7 @@ def gallery():
         cards.append({"job": d.name, "title": tl["title"], "final": tl["final"], "season": tl["season"],
                       "week": tl["week"], "teams": tl["teams"], "song": tl["song"], "youtube": tl["youtube"],
                       "story": tl.get("story", ""), "curve": tl.get("curve"), "sport": tl.get("sport", "NFL"),
+                      "source_label": tl.get("source_label") or "Original game on YouTube",
                       "lengths": lens})
     (ROOT / "outputs" / "gallery.json").write_text(json.dumps(cards, ensure_ascii=False, indent=1), encoding="utf-8")
     return cards
