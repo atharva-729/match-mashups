@@ -22,11 +22,26 @@ class Job:
         self.work.mkdir(parents=True, exist_ok=True)
         self.out.mkdir(parents=True, exist_ok=True)
         self.cfg = yaml.safe_load((self.inp / "job.yaml").read_text(encoding="utf-8"))
+        # a story cut (job.yaml: footage_from: <job>, story: stories/<name>.yaml) reuses another job's footage, song and
+        # tags; only its plan, captions and renders are its own
+        self.foot_inp, self.foot_work = self.inp, self.work
+        if self.cfg.get("footage_from"):
+            base = self.cfg["footage_from"]
+            self.foot_inp, self.foot_work = ROOT / "inputs" / base, ROOT / "work" / base
+            cfg = yaml.safe_load((self.foot_inp / "job.yaml").read_text(encoding="utf-8"))
+            cfg.update(self.cfg)
+            self.cfg = cfg
+        self.story = (yaml.safe_load((ROOT / self.cfg["story"]).read_text(encoding="utf-8"))
+                      if self.cfg.get("story") else None)
         self.gid = self.cfg["match_id"]
         self.league = self.cfg["league"].upper()
-        self.song = self.inp / "song.mp3"
-        self.parts = sorted(self.inp.glob("part*.mp4"), key=lambda f: int(f.stem[4:] or 0))
+        self.song = self.foot_inp / "song.mp3"
+        self.parts = sorted(self.foot_inp.glob("part*.mp4"), key=lambda f: int(f.stem[4:] or 0))
         self.L = L                 # v2: the summary length (60 / 120 s); None = the v1 single mashup
+        if L:                      # a length may have its own song: song_file_<L>, song_track_<L>, ... override
+            for k in ("song_file", "song_track", "song_title", "song_artist", "song_credit_full"):
+                if f"{k}_{L}" in self.cfg:
+                    self.cfg[k] = self.cfg[f"{k}_{L}"]
         if L:
             (self.work / str(L)).mkdir(exist_ok=True)
             self.out_l = self.out / str(L)
@@ -39,7 +54,9 @@ class Job:
     def wpath(self, name):
         if self.L and name in VARIANT:
             return self.work / str(self.L) / name
-        return self.work / name
+        if name == "alignment.json":
+            return self.work / name
+        return self.foot_work / name      # footage files (clips, box, replay OCR): the footage job's
 
     def load(self, name):
         return json.loads(self.wpath(name).read_text(encoding="utf-8"))

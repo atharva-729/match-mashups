@@ -1,0 +1,41 @@
+# Story cut: Panthers @ Bengals 2014 W6 (37-37, OT), footage from nfl_mk_car_cin.
+# Each beat = one anchor play (step = the play's result, as in the caption briefs), optional extra plays to show
+# around it (show), a caption when its footage starts (say), and optionally one at the play's result (then).
+# Captions name every score the viewer doesn't see, so the scoreboard never jumps without a reason.
+title: "Nobody blinks"
+line: "Every score answered, then the winning kick misses."
+# why this song: shown in big type beside the video and on the title card (the captions never mention the music)
+why_song: "In the Hall of the Mountain King plays one tune over and over, louder and faster each time. This game did the same: score, answer, score, answer."
+# the story's turning beat lands on the song's turn (its biggest rise in energy), per length
+turn: {60: 131, 120: 131}
+cuts:
+  60:
+    - {step: 41,  say: "Bernard runs 89 yards. Bengals lead 14–7."}
+    - {step: 89,  say: "Then Dalton throws two interceptions."}
+    - {step: 106, say: "Panthers lead 24–17."}
+    - {step: 131, say: "Fourth quarter: now every score gets answered. 24–24."}
+    - {step: 149, say: "Panthers go ahead 31–24. A 97-yard kick return answers."}
+    - {step: 150, say: "Bengals tie it, 31–31."}
+    - {step: 161, say: "Bengals kick ahead, 34–31."}
+    - {step: 177, say: "Five seconds left. Panthers tie it."}
+    - {step: 208, say: "Overtime: a field goal each. 37–37."}
+    - {step: 219, show: [217], say: "Two seconds left. A 36-yard kick to win.", then: "Wide right. Nobody wins."}
+  120:
+    - {step: 17,  say: "Carolina scores first."}
+    - {step: 34,  say: "Cincinnati answers."}
+    - {step: 41,  say: "Bernard runs 89 yards. Bengals lead 14–7."}
+    - {step: 74,  say: "A field goal each: 17–10 at the half."}
+    - {step: 89,  say: "Third quarter: Dalton is intercepted."}
+    - {step: 91,  say: "Carolina ties it, 17–17."}
+    - {step: 106, say: "Cam Newton runs in. Panthers lead 24–17."}
+    - {step: 113, say: "Dalton is intercepted again."}
+    - {step: 131, say: "Fourth quarter: now every score gets answered. 24–24."}
+    - {step: 147, say: "Panthers go ahead, 31–24."}
+    - {step: 149, say: "A 97-yard kickoff return..."}
+    - {step: 150, say: "...and the Bengals tie it, 31–31."}
+    - {step: 155, say: "Cam Newton is intercepted."}
+    - {step: 161, say: "Bengals kick ahead, 34–31."}
+    - {step: 177, show: [173], say: "Five seconds left. Panthers kick to tie it."}
+    - {step: 193, say: "Overtime. Bengals kick ahead, 37–34."}
+    - {step: 208, say: "Panthers answer again, 37–37."}
+    - {step: 219, show: [216, 217], say: "Two seconds left. A 36-yard kick to win it.", then: "Wide right. Nobody wins."}

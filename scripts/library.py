@@ -74,7 +74,8 @@ def tracks():
                             d["credit"] = r["credit"] + ", via www.classicals.de"
                     out.append({"id": r["id"], "kind": "engine", "title": r["title"], "artist": r["artist"],
                                 "performer": r["artist"], "licence": r["licence"], "credit": r["credit"],
-                                "audio_url": r["audio_url"], "genre": r["genre"], "feel": r["feel"]})
+                                "audio_url": r["audio_url"], "genre": r["genre"], "feel": r["feel"],
+                                "local": str(eng["root"] / r["file"]) if r.get("file") else ""})
     return out
 
 
@@ -86,6 +87,9 @@ def ensure_audio(t):
     if t["kind"] == "demo":
         return Path(t["file"])
     p = CACHE / "audio" / f"{t['id']}.mp3"
+    if not p.exists() and t.get("local") and Path(t["local"]).exists():   # the engine repo's own copy: no download
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(Path(t["local"]).read_bytes())
     if not p.exists():
         p.parent.mkdir(parents=True, exist_ok=True)
         req = urllib.request.Request(t["audio_url"], headers={"User-Agent": "Mozilla/5.0"})

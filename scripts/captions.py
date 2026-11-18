@@ -95,10 +95,14 @@ def check(job):
     caps = json.loads(f.read_text(encoding="utf-8"))
     probs = []
     bangs = sum(c["text"].count("!") for c in caps)
+    story = bool(job.story)        # story cuts: longer lines (Atharva, 2026-11-13: "longer, but not too long"), timed by script
+    max_w, dur = (10, (1.5, 4.5)) if story else (6, (2.0, 3.5))
+    if story:                      # a story file may allow longer lines (e.g. the dramatized cut)
+        max_w, dur = job.story.get("max_words", max_w), (dur[0], job.story.get("caption_max_s", dur[1]))
     for i, c in enumerate(caps):
         w = c["text"].split()
         tag = f"#{i} {mmss(c['start'])} “{c['text']}”"
-        if len(w) > 6:
+        if len(w) > max_w:
             probs.append(f"{tag}: {len(w)} words")
         if BANNED.search(c["text"]):
             probs.append(f"{tag}: banned word '{BANNED.search(c['text']).group(0)}'")
@@ -106,15 +110,15 @@ def check(job):
         if caps_w:
             probs.append(f"{tag}: all caps {caps_w}")
         d = c["end"] - c["start"]
-        if not 2.0 - 1e-6 <= d <= 3.5 + 1e-6:
+        if not dur[0] - 1e-6 <= d <= dur[1] + 1e-6:
             probs.append(f"{tag}: lasts {d:.1f} s")
         if i and c["start"] < caps[i - 1]["end"] - 1e-6:
             probs.append(f"{tag}: overlaps the previous caption")
         s_on = on_screen(edl, c["start"])
-        if s_on is None or abs(s_on - c["step"]) > 2:
+        if not story and (s_on is None or abs(s_on - c["step"]) > 2):
             probs.append(f"{tag}: step {c['step']} but step {s_on} is on screen")
     lo, hi = COUNT[job.L]
-    n_ok = lo <= len(caps) <= hi
+    n_ok = story or lo <= len(caps) <= hi
     ok = not probs and bangs <= 1 and n_ok
     log("\n".join([f"### {stamp()} · Checkpoint 4 ({job.tag}): {'PASS' if ok else 'FAIL'}",
                    f"- `captions/{job.name}_{job.L}.json`: {len(caps)} captions ({lo}-{hi}: {n_ok}); '!' used {bangs}× (≤1: {bangs <= 1})",

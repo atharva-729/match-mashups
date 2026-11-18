@@ -32,7 +32,17 @@ def run_v2(job, name, cfg):
     py = sys.executable
     sc = lambda f: str(ROOT / "scripts" / f)
     t_all = time.time()
-    dbg = ["--debug"] if "--debug" in sys.argv else []
+    dbg = (["--debug"] if "--debug" in sys.argv else []) + (["--hq"] if "--hq" in sys.argv else [])   # --hq: near-lossless render
+    if cfg.get("footage_from"):               # a story cut: the footage job's song, footage and tags; its own plan
+        for L in (60, 120):
+            for ph, script, extra in (("align", "align.py", []), ("plan", "plan_edit.py", []),
+                                      ("render", "render.py", dbg), ("captions", "story_captions.py", [])):
+                print(f"=== {L} s · {ph} ===", flush=True)
+                subprocess.run([py, sc(script), job, "--len", str(L), *extra], check=True)
+            subprocess.run([py, sc("captions.py"), job, "--len", str(L), "--check"])
+            subprocess.run([py, sc("timeline.py"), job, "--len", str(L)], check=True)
+        print(f"=== story cut, all phases: {time.time() - t_all:.0f} s ===", flush=True)
+        return
     subprocess.run([py, sc("pick_song.py"), job], check=True)
     for L in (60, 120):                       # alignment needs no footage: first, so the footage phases can read it
         subprocess.run([py, sc("align.py"), job, "--len", str(L)], check=True)

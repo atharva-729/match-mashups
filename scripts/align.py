@@ -58,6 +58,17 @@ def song_curve(job):
     return d, len(x) / sr
 
 
+def song_turn(job):
+    """The song window's turn: the middle of its biggest sustained energy rise (mean of the next tenth minus the last
+    tenth of the curve), in window seconds. A story's turning beat is placed there."""
+    d, _ = song_curve(job)
+    c = np.asarray(d["curve"], float)
+    w = len(c) // 10
+    sc = [np.mean(c[i:i + w]) - np.mean(c[i - w:i]) for i in range(w, len(c) - w)]
+    i = w + int(np.argmax(sc))
+    return float(d["t0"] + i / (len(c) - 1) * (d["t1"] - d["t0"]))
+
+
 def mapping(a, b):
     """The page's mapping: banded DTW path -> mean song index per game index."""
     dist, path = sister.dtw_path(a, b)

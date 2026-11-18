@@ -41,7 +41,7 @@ This project sits next to **`which-match-is-your-song`** (the "sister repo", pat
 - The ball and play indices used here **must be the sister repo's**, so alignment and tagging agree.
 
 ### Hard rules
-- **Footage never goes in git.** The repo is public. `inputs/`, `work/` and `outputs/` are gitignored. Only code, configs without paths to footage, and logs without frames go public. Finished videos are shared privately (Drive), never published to GitHub Pages.
+- **Footage never goes in git.** The repo is public. `inputs/`, `work/` and `outputs/` are gitignored. Only code, configs without paths to footage, and logs without frames go public. Finished videos are published only as release assets for the demo site (`docs/`, see `scripts/export_site.py`), never committed.
 - **No manual clip tagging.** The only manual step is confirming the scoreboard box once per video (Phase 2).
 - **Credit the song** on the end card: track title, artist, and "via classicals.de" for those tracks.
 
@@ -240,7 +240,7 @@ song_credit: "via classicals.de"
   5. Anything that deviated from this plan
   6. **Next round:** commentary captions and an intensity overlay (frequency bars or a pulsing glow plus a win-probability tug-of-war bar), from review feedback
 
-**Don't:** don't push footage, frames or rendered videos. Don't create a Pages site for this repo.
+**Don't:** don't push footage, frames or rendered videos. The demo site (`docs/`, GitHub Pages) streams its videos from a release.
 
 **✅ Checkpoint 7:** `git ls-files | grep -Ei '\.(mp4|mov|mkv|mp3|wav|jpg|png)$'` returns only the alignment plots in `logs/` (and nothing from `work/` or `outputs/`), and `SUMMARY.md` exists.
 ---

@@ -10,3 +10,5 @@ opencv-python
 scenedetect[opencv]
 rapidocr-onnxruntime   # scoreboard OCR (recognition only, on fixed strips of the bar)
 yt-dlp                 # full-game replays (scripts/fetch_replay.py)
+lightgbm               # the sister repo's leverage model (excitement.py suspense)
+playwright             # scripts/capture_player.py (1080p share videos; drives installed Edge) and checks

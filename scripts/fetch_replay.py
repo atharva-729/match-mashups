@@ -123,6 +123,10 @@ def select(job, snaps, song_len):
         e = ev.get(p + 1, {})
         if e.get("td") or e.get("turnover") or e.get("fg") or abs(wp[p + 1] - wp[p]) >= story.SWING_FULL["NFL"]                 or p + 1 in moments:                 # v2: every page moment (v1 dropped the blocked FG at Q2 0:01)
             key.append(p)
+    # every play a story cut of this footage uses (anchor or shown) is fetched whole, like a key play
+    for p in story_rows(job):
+        if p in snaps and p not in key:
+            key.append(p)
     chosen = set(key)
     total = lambda: sum(PRE + (POST_KEY if p in key else POST) for p in chosen)
     rest = sorted((p for p in snaps if p not in chosen and ev.get(p + 1, {}).get("play_type") in ("pass", "run")),
@@ -132,6 +136,23 @@ def select(job, snaps, song_len):
             break
         chosen.add(p)
     return sorted(chosen), set(key)
+
+
+def story_rows(job):
+    """Play rows (step - 1) used by the story cuts that take their footage from this job (inputs/*/job.yaml with
+    footage_from: <job>)."""
+    import yaml
+    from common import ROOT
+    rows = set()
+    for f in (ROOT / "inputs").glob("*/job.yaml"):
+        cfg = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
+        if cfg.get("footage_from") != job.name or not cfg.get("story"):
+            continue
+        st = yaml.safe_load((ROOT / cfg["story"]).read_text(encoding="utf-8"))
+        for beats in st["cuts"].values():
+            for b in beats:
+                rows |= {s - 1 for s in [b["step"], *b.get("show", [])]}
+    return sorted(rows)
 
 
 def sections(snaps, wins, chosen, key, dur):

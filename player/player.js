@@ -40,26 +40,36 @@
   }
 
   function renderGallery() {
-    const cards = $("cards");
-    cards.innerHTML = st.games.map((g) => {
-      const [match, when] = g.title.split(" · ");
-      const a = g.teams.away, h = g.teams.home;
-      const head = g.sport === "NASCAR"
-        ? `<div class="sport">NASCAR Cup Series</div><div class="teams">${esc(match)}</div>`
-        : `<div class="teams"><span class="chip" style="background:${a.colour}"></span>${esc(a.name)}
-          <span class="vs">@</span><span class="chip" style="background:${h.colour}"></span>${esc(h.name)}</div>`;
-      return `<article class="gcard">
-        ${head}
-        <div><span class="final">${esc(g.final)}</span> <span class="when">· ${esc(when || g.season)}</span></div>
-        ${g.curve ? spark(g.curve) : ""}
-        ${g.story ? `<div class="story">${esc(g.story)}</div>` : ""}
-        <div class="song">Song: <b>${esc(g.song.title)}</b> · ${esc(g.song.artist)}</div>
-        <div class="row">
-          ${g.lengths.map((L) => `<a class="btn" href="#/play/${g.job}/${L}">${L} s</a>`).join("")}
-          ${g.youtube ? `<a class="yt" href="${esc(g.youtube)}" target="_blank" rel="noopener">${esc(g.source_label || "Original game on YouTube")} ↗</a>` : ""}
-        </div></article>`;
-    }).join("");
+    // first row: the story cuts; second row, kept separate: every other game
+    // highlights (gallery.json `highlight`) on top, then the other story cuts, then every other game
+    const hl = st.games.filter((g) => g.highlight);
+    const stories = st.games.filter((g) => g.story_title && !g.highlight), rest = st.games.filter((g) => !g.story_title && !g.highlight);
+    $("cardsHL").innerHTML = hl.map(cardHtml).join("");
+    $("hlHead").hidden = !hl.length; $("storyHead").hidden = !(hl.length && stories.length);
+    $("cards").innerHTML = stories.map(cardHtml).join("");
+    $("cards2").innerHTML = rest.map(cardHtml).join("");
+    $("moreHead").hidden = !((stories.length || hl.length) && rest.length);
     $("empty").hidden = st.games.length > 0;
+  }
+
+  function cardHtml(g) {
+    const [match, when] = g.title.split(" · ");
+    const a = g.teams.away, h = g.teams.home;
+    const head = g.sport === "NASCAR"
+      ? `<div class="sport">NASCAR Cup Series</div><div class="teams">${esc(match)}</div>`
+      : `<div class="teams"><span class="chip" style="background:${a.colour}"></span>${esc(a.name)}
+        <span class="vs">@</span><span class="chip" style="background:${h.colour}"></span>${esc(h.name)}</div>`;
+    return `<article class="gcard${g.highlight ? " hl" : ""}">
+      ${head}
+      ${g.story_title ? `<div class="stitle">${esc(g.story_title)}</div>` : ""}
+      <div><span class="final">${esc(g.final)}</span> <span class="when">· ${esc(when || g.season)}</span></div>
+      ${g.curve ? spark(g.curve) : ""}
+      ${g.story ? `<div class="story">${esc(g.story)}</div>` : ""}
+      <div class="song">Song: <b>${esc(g.song.title)}</b> · ${esc(g.song.artist)}</div>
+      <div class="row">
+        ${g.lengths.map((L) => `<a class="btn" href="#/play/${g.job}/${L}">${L} s</a>`).join("")}
+        ${g.youtube ? `<a class="yt" href="${esc(g.youtube)}" target="_blank" rel="noopener">${esc(g.source_label || "Original game on YouTube")} ↗</a>` : ""}
+        </div></article>`;
   }
 
   /* ---------------- player ---------------- */
@@ -74,19 +84,20 @@
     if (!r.ok) { location.hash = "#/"; return; }
     st.tl = await r.json();
     const tl = st.tl;
-    video.src = base + tl.files.video;
-    game.src = base + tl.files.game;
-    song.src = base + tl.files.song;
-    st.capIdx = -1; st.ended = false; st.started = false;
+    const media = (f) => (/^https?:\/\//.test(f) ? f : base + f);   // the published site streams media from a release
+    video.src = media(tl.files.video);
+    game.src = media(tl.files.game);
+    song.src = media(tl.files.song);
+    st.capIdx = -1; st.clockAt = null; st.ended = false; st.started = false; st.gameRange = null; st.pulse = 0;
     st.sync = { max: 0, resyncs: 0, samples: 0, since: 0, sum: 0 };
     // the demo flow: raw first (game sound on, captions/song/visual off); switching length (L) keeps the toggles
-    const carry = st.carry || { captions: false, song: false, visual: false, voiceOn: false };
+    const carry = st.carry || { captions: true, song: true, visual: true, voiceOn: false };   // Atharva, 2026-11-15: all on by default
     st.carry = null;
     st.captions = carry.captions; st.song = carry.song; st.visual = carry.visual;
     st.voiceOn = false; st.duck = 1;
     st.vol = { game: st.song ? 0 : 1, song: st.song ? 1 : 0 }; applyVolumes();
     const [match, when] = tl.title.split(" · ");
-    $("tMatch").textContent = match;
+    $("tMatch").textContent = tl.story_title ? `${match}: ${tl.story_title}` : match;
     $("tMeta").textContent = `${when || tl.season} · ${L}-second summary · cut automatically from the full broadcast`;
     $("tLink").href = tl.youtube || "#"; $("tLink").hidden = !tl.youtube;
     $("ytLink").href = tl.youtube || "#"; $("ytLink").hidden = !tl.youtube;
@@ -96,12 +107,11 @@
     $("eSong").textContent = `Song: ${tl.song.credit}`;
     $("eLink").href = tl.youtube || "#"; $("eLink").textContent = tl.youtube || "";
     $("credit").innerHTML = `♪ <b>${esc(tl.song.title)}</b><br>${esc(tl.song.credit)}`;
+    $("mWhy").textContent = tl.why_song || "";
+    $("tWhy").textContent = tl.why_song || "";
+    setupMatch(tl);
     placeCredit(tl);
     placeLower(tl);
-    $("vizAway").textContent = tl.teams.away.abbr;
-    $("vizHome").textContent = tl.teams.home.abbr;
-    $("fillAway").style.background = tl.teams.away.colour;
-    $("fillHome").style.background = tl.teams.home.colour;
     const other = otherLength();
     $("tLlabel").textContent = `${L} s` + (other ? ` → ${other}` : "");
     $("tL").disabled = !other;
@@ -266,8 +276,8 @@
     $("tS").title = st.song ? "Playing the song (S for the game sound)" : "Playing the game sound (S for the song)";
     $("tV").classList.toggle("on", st.visual);
     $("credit").classList.toggle("on", st.song);
-    $("vizA").classList.toggle("on", st.visual && !(st.tl && st.tl.sport === "NASCAR"));
-    $("glow").classList.toggle("on", st.visual);
+    $("vizA").classList.toggle("on", st.visual);
+    $("glow").classList.toggle("on", st.visual); if (!st.visual) $("glow").style.opacity = "";
     if (!st.captions) $("cap").classList.remove("on");
   }
 
@@ -286,6 +296,23 @@
     capTimer = setTimeout(() => { $("capText").textContent = caps[i].text; el.classList.add("on"); }, 150);
   }
 
+  /* "time is running out": during a late play's slowed run-up, the time left in big type and a few words
+     (timeline.clock, from timeline.py); the video is untouched */
+  function updateClock(t) {
+    const list = (st.tl && st.tl.clock) || [];
+    const c = st.captions ? list.find((x) => x.start <= t && t < x.end) : null;
+    const el = $("clock");
+    if (!c) {
+      if (st.clockAt !== null) { el.classList.remove("on"); st.clockAt = null; }
+      return;
+    }
+    if (st.clockAt !== c.start) {
+      st.clockAt = c.start;
+      $("cWhen").textContent = c.when; $("cHead").textContent = c.head; $("cSub").textContent = c.sub;
+      el.classList.add("on");
+    }
+  }
+
   /* visual: momentum glow (edges in the colour of the team gaining win probability over the last ~8 s, brighter when
      the game is tense) + a win-probability bar with live percentages */
   function sample(t) {
@@ -295,23 +322,95 @@
   let lastViz = -1;
   function updateViz(t) {
     if (!st.visual || !st.tl) return;
-    const k = Math.floor(t * 4);
-    if (k === lastViz) return;
-    lastViz = k;
-    const [, wp, ten] = sample(t), [, wp0] = sample(Math.max(0, t - 8));
-    const tm = st.tl.teams, away = 1 - wp;
-    $("fillAway").style.width = `${(away * 100).toFixed(1)}%`;
-    $("fillHome").style.width = `${(wp * 100).toFixed(1)}%`;
-    $("pAway").textContent = `${Math.round(away * 100)}%`;
-    $("pHome").textContent = `${Math.round(wp * 100)}%`;
-    const swing = wp - wp0;                                   // > 0: home gaining
-    const col = st.tl.sport === "NASCAR" ? "#f2b33d" : (swing >= 0 ? tm.home.colour : tm.away.colour);
-    const strength = st.tl.sport === "NASCAR" ? Math.min(1, 0.15 + 0.85 * ten)          // a race: tension alone
-      : Math.min(1, 0.25 + 0.75 * ten) * Math.min(1, 0.35 + Math.abs(swing) * 6);
-    const px = (3 + 9 * strength).toFixed(1), a = Math.round(90 + 165 * strength).toString(16).padStart(2, "0");
-    $("glow").style.boxShadow = `inset 0 0 ${px}cqw ${(+px / 4).toFixed(1)}cqw ${col}${a}`;
+    const tl = st.tl, k = Math.floor(t * 4);
+    if (k !== lastViz) {                                       // colour + base strength, 4x a second
+      lastViz = k;
+      const [, wp, ten] = sample(t), [, wp0] = sample(Math.max(0, t - 8));
+      const swing = wp - wp0;                                  // > 0: home gaining
+      const col = tl.sport === "NASCAR" ? "#f2b33d" : (swing >= 0 ? tl.teams.home.colour : tl.teams.away.colour);
+      const ex = tl.game_env ? tl.game_env[Math.min(tl.game_env.length - 1, Math.floor(t * tl.rate))] : ten;
+      const strength = Math.min(1, 0.2 + 0.8 * ex);
+      const px = (3 + 8 * strength).toFixed(1);
+      $("glow").style.boxShadow = `inset 0 0 ${px}cqw ${(+px / 4).toFixed(1)}cqw ${col}`;
+      st.glowBase = 0.25 + 0.45 * strength;
+    }
+    // the pulse: the music's hits (decaying), every frame
+    const hit = tl.song_hit ? tl.song_hit[Math.min(tl.song_hit.length - 1, Math.floor(t * tl.rate))] : 0;
+    st.pulse = Math.max(hit, (st.pulse || 0) * 0.86);
+    $("glow").style.opacity = Math.min(1, (st.glowBase || 0.4) + 0.55 * st.pulse).toFixed(3);
+    drawMeter(t);
+  }
+  const METER_S = 15;
+  function drawMeter(t) {
+    const tl = st.tl, cv = $("meterCv");
+    if (!tl.song_env) return;
+    const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+    if (!w || !h) return;
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+    const g = cv.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+    if (!st.gameRange) {                                     // the game line uses the cut's own range
+      const v = tl.game_env || tl.samples.map((x) => x[2]);
+      st.gameRange = [Math.min(...v), Math.max(...v)];
+    }
+    const [glo, ghi] = st.gameRange, R = tl.rate, n = tl.samples.length;
+    const k1 = Math.min(n - 1, Math.floor(t * R)), k0 = Math.max(0, k1 - METER_S * R);
+    const X = (k) => w - ((k1 - k) / (METER_S * R)) * w, pad = 3, H = h - 2 * pad;
+    const line = (val, col, glowc) => {
+      g.beginPath();
+      for (let k = k0; k <= k1; k++) { const x = X(k), y = pad + H - val(k) * H; k === k0 ? g.moveTo(x, y) : g.lineTo(x, y); }
+      g.strokeStyle = col; g.lineWidth = 2; g.lineJoin = "round"; g.shadowColor = glowc; g.shadowBlur = 6; g.stroke(); g.shadowBlur = 0;
+      g.beginPath(); g.arc(X(k1), pad + H - val(k1) * H, 3, 0, 7); g.fillStyle = col; g.fill();
+    };
+    line((k) => tl.song_env[Math.min(k, tl.song_env.length - 1)], "#ff4f8b", "rgba(255,79,139,.6)");
+    // the game line: the cut's excitement (what the music was matched to) when the timeline has it, else tension
+    const gv = (k) => (tl.game_env ? tl.game_env[Math.min(k, tl.game_env.length - 1)] : tl.samples[k][2]);
+    line((k) => (gv(k) - glo) / (ghi - glo || 1), "#3ad1ff", "rgba(58,209,255,.6)");
   }
   function drawSpark() {}
+
+  /* song <-> game match (the sister page's chart): song energy on top, the game below, grey lines = the DTW pairing,
+     the marker = where the song is now and which part of the game is on screen */
+  const MC = { song: "#ff4f8b", game: "#3ad1ff", now: "#ffd23f", line: "rgba(255,255,255,.13)" };
+  let lastMatch = -1;
+  function setupMatch(tl) {
+    const m = tl.match;
+    $("matchPanel").hidden = !m;
+    lastMatch = -1;
+    if (!m) return;
+    let mx = 0;                                           // the step on screen, never running backwards
+    st.shown = tl.samples.map(([s]) => (mx = Math.max(mx, s)));
+  }
+  function drawMatch(t, force) {
+    const m = st.tl && st.tl.match, cv = $("matchCv");
+    if (!m || $("matchPanel").hidden || document.fullscreenElement) return;
+    const k = Math.floor(t * 10);
+    if (k === lastMatch && !force) return;
+    lastMatch = k;
+    const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+    const g = cv.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+    const N = m.song.length, pad = 4, band = (h - 3 * pad - 18) / 2, topY = pad + 9, botY = topY + band + pad + 9;
+    const X = (i) => pad + (i / (N - 1)) * (w - 2 * pad);
+    const Y = (ys, y0) => (i) => y0 + band - ys[Math.max(0, Math.min(N - 1, Math.round(i)))] * band;
+    const ya = Y(m.song, topY), yb = Y(m.game, botY);
+    g.strokeStyle = MC.line; g.lineWidth = 1;
+    for (const [i, j] of m.path) { g.beginPath(); g.moveTo(X(i), ya(i)); g.lineTo(X(j), yb(j)); g.stroke(); }
+    for (const [ys, y, c] of [[m.song, ya, MC.song], [m.game, yb, MC.game]]) {
+      g.beginPath(); for (let i = 0; i < N; i++) i ? g.lineTo(X(i), y(i)) : g.moveTo(X(i), y(i));
+      g.strokeStyle = c; g.lineWidth = 2; g.lineJoin = "round"; g.stroke();
+    }
+    g.font = "600 10px system-ui"; g.fillStyle = MC.song; g.fillText("SONG", pad, topY - 2);
+    g.fillStyle = MC.game; g.fillText("GAME", pad, botY - 2);
+    const i = Math.max(0, Math.min(N - 1, ((t - m.t0) / (m.t1 - m.t0)) * (N - 1)));
+    const s = st.shown[Math.max(0, Math.min(st.shown.length - 1, Math.floor(t * st.tl.rate)))];
+    const j = (m.tau[Math.min(m.tau.length - 1, s)] || 0) * (N - 1);
+    g.strokeStyle = MC.now; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(X(i), topY); g.lineTo(X(i), topY + band); g.lineTo(X(j), botY); g.lineTo(X(j), botY + band); g.stroke();
+    for (const [x, y] of [[X(i), ya(i)], [X(j), yb(j)]]) { g.beginPath(); g.arc(x, y, 3.5, 0, 7); g.fillStyle = MC.now; g.fill(); }
+  }
+  window.addEventListener("resize", () => drawMatch(video.currentTime || 0, true));
 
   /* frame loop */
   function frame() {
@@ -320,7 +419,9 @@
       syncAudio();
       updateDuck(t);
       updateCaption(t);
+      updateClock(t);
       updateViz(t);
+      drawMatch(t);
       $("done").style.width = `${Math.min(100, (t / d) * 100)}%`;
       $("knob").style.left = `${Math.min(100, (t / d) * 100)}%`;
       if (video.buffered.length) $("buf").style.width = `${Math.min(100, (video.buffered.end(video.buffered.length - 1) / d) * 100)}%`;
@@ -375,6 +476,7 @@
   async function route() {
     const m = location.hash.match(/^#\/play\/([^/]+)\/(\d+)/);
     await loadGallery();
+    document.body.classList.toggle("inplayer", !!m);
     if (m) {
       $("gallery").hidden = true; $("player").hidden = false;
       openPlayer(m[1], m[2]);

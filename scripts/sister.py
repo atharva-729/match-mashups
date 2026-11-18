@@ -131,6 +131,26 @@ def nfl_plays(gid):
     return d
 
 
+def nfl_suspense(gid):
+    """Suspense per step of an NFL game: the expected |dWP| of the next play given the game state (the sister repo's
+    own leverage model, build_nfl.fit_leverage: LightGBM on WP distance from 50%, time, quarter, down, distance, field
+    position, margin), in win-probability units; the appended outcome step gets 0. Fitted once on every season the
+    sister repo holds, the same data its page uses; cached per game in work/_excitement/nfl_suspense.npz."""
+    from common import ROOT
+    cache = ROOT / "work" / "_excitement" / "nfl_suspense.npz"
+    gkey = gid.removeprefix("nfl_")
+    if not cache.exists():
+        bn = _build_nfl()
+        pbp = bn.load()
+        lev, _ = bn.fit_leverage(pbp)
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        pbp = pbp.assign(lev=lev)
+        np.savez_compressed(cache, **{k: g.lev.to_numpy(np.float32) for k, g in pbp.groupby("game_id", sort=False)})
+    lev = np.load(cache)[gkey].astype(float)
+    assert len(lev) + 1 == curve(gid)["n_steps"], "NFL play indexing drifted from the sister repo"
+    return np.append(lev, 0.0)
+
+
 def ipl_balls(gid):
     """Deliveries of one match, in the order build_ipl used (parse order within the match)."""
     mid = gid.removeprefix("ipl_")

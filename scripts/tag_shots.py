@@ -443,7 +443,7 @@ class NFLParser:
                 g = [(int(a), int(b)) for a, b in re.findall(r"(?:1ST|2ND|3RD|4TH)\s*(\d)(\d{2})(?!\d)", txt)
                      if int(b) <= 59]
             if not g:                              # under a minute FOX shows ':51', read glued as '2ND51' = 0:51
-                g = [(0, int(b)) for b in re.findall(r"(?:1ST|2ND|3RD|4TH)\s*:?(\d{2})(?![\d&])", txt) if int(b) <= 59]
+                g = [(0, int(b)) for b in re.findall(r"(?:1ST|2ND|3RD|4TH|OT)\s*:?(\d{2})(?![\d&])", txt) if int(b) <= 59]
             if g:
                 mm, ss = g[-1]
         if mm is None:

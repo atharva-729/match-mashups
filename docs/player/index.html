@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Match Mashups</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="player.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="#/"><span class="dot"></span>Match Mashups</a>
+  <span class="sub">Automatic game summaries</span>
+</header>
+
+<main id="gallery" class="view">
+  <h1>Pick a game</h1>
+  <p class="lede">Each summary was cut automatically from the full-game broadcast. The highlights are on top.</p>
+  <h2 id="hlHead" class="more hlh" hidden>Highlights</h2>
+  <div id="cardsHL" class="cards"></div>
+  <h2 id="storyHead" class="more" hidden>More story cuts</h2>
+  <div id="cards" class="cards"></div>
+  <h2 id="moreHead" class="more" hidden>More games</h2>
+  <div id="cards2" class="cards"></div>
+  <p id="empty" class="empty" hidden>No summaries rendered yet. Run <code>python run.py inputs/&lt;job&gt; --v2</code>.</p>
+</main>
+
+<main id="player" class="view" hidden>
+  <div class="playrow">
+  <div class="theatre" id="theatre">
+  <div class="stage" id="stage">
+    <video id="video" playsinline muted preload="auto"></video>
+    <audio id="game" preload="auto"></audio>
+    <audio id="song" preload="auto"></audio>
+
+    <div class="credit" id="credit" aria-live="off"></div>
+
+    <div class="cap" id="cap"><span class="bar"></span><span class="txt" id="capText"></span></div>
+    <!-- "time is running out": the broadcast clock magnified + the time left, during a late play's run-up -->
+    <div class="clock" id="clock" aria-live="off"><div class="csb" id="cSb"></div>
+      <div class="ctext"><div class="cwhen" id="cWhen"></div><div class="chead" id="cHead"></div><div class="csub" id="cSub"></div></div></div>
+
+    <div class="glow" id="glow" aria-hidden="true"></div>
+    <div class="meter" id="vizA" aria-hidden="true">
+      <span class="ml"><b class="s">SONG</b><b class="g">GAME</b></span>
+      <canvas id="meterCv"></canvas>
+    </div>
+
+    <div class="card title" id="titleCard">
+      <div class="kicker">Summary of the full game</div>
+      <div class="match" id="tMatch"></div>
+      <div class="meta" id="tMeta"></div>
+      <div class="why" id="tWhy"></div>
+      <a class="yt" id="tLink" target="_blank" rel="noopener">Original on YouTube ↗</a>
+    </div>
+    <div class="card end" id="endCard" hidden>
+      <div class="kicker">Final</div>
+      <div class="match" id="eFinal"></div>
+      <div class="meta" id="eSong"></div>
+      <div class="meta">Original: <a id="eLink" target="_blank" rel="noopener"></a></div>
+      <button class="again" id="again">Play again</button>
+    </div>
+    <button class="bigplay" id="bigPlay" hidden aria-label="Play">▶</button>
+  </div>
+
+  <div class="controls">
+    <button class="ctl" id="playBtn" title="Play / pause (space)">❚❚</button>
+    <button class="ctl skip" id="back10" title="Back 10 s (←)">−10</button>
+    <div class="scrub" id="scrub"><div class="buf" id="buf"></div><div class="done" id="done"></div><div class="knob" id="knob"></div><div class="tip" id="tip"></div></div>
+    <button class="ctl skip" id="fwd10" title="Forward 10 s (→)">+10</button>
+    <span class="time" id="time">0:00</span>
+    <div class="toggles">
+      <button class="tog" id="tC" data-key="C"><b>C</b>Captions</button>
+      <button class="tog" id="tS" data-key="S"><b>S</b><span id="tSlabel">Song</span></button>
+      <button class="tog" id="tV" data-key="V"><b>V</b>Visual</button>
+      <button class="tog" id="tF" data-key="F" title="Fullscreen"><b>F</b>Full</button>
+      <button class="tog len" id="tL" data-key="L"><b>L</b><span id="tLlabel">60 s</span></button>
+    </div>
+  </div>
+  </div>
+  <aside class="match" id="matchPanel" hidden>
+    <div class="mh">Why this song</div>
+    <p class="why" id="mWhy"></p>
+    <canvas id="matchCv" aria-label="Song energy and the game's story, matched"></canvas>
+    <div class="mlegend"><span class="ls">Song energy</span><span class="lg">The game</span><span class="lp">Now</span></div>
+    <p class="mnote">Grey lines pair each part of the song with the part of the game it matches. The marker is where
+      the video is now.</p>
+    <a href="#/" class="mback">← All games</a>
+  </aside>
+  </div>
+  <div class="below">
+    <a href="#/" class="back">← All games</a>
+    <a class="yt small" id="ytLink" target="_blank" rel="noopener">Original game on YouTube ↗</a>
+    <span class="drift" id="drift" title="audio / video sync"></span>
+  </div>
+</main>
+
+<script src="player.js"></script>
+</body>
+</html>

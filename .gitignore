@@ -18,3 +18,6 @@ config.yaml
 # screenshots that show broadcast frames stay local (footage never goes in git)
 logs/v2_visual_*.png
 logs/v2_player_*.png
+# private handoff notes and session context stay local
+_claude_context/
+HANDOFF_WORK_LAPTOP.md

@@ -1,0 +1,52 @@
+# Story cut: Panthers @ Bengals 2014 W6 (37-37, OT), footage from nfl_mk_car_cin.
+# The excitement-matched version of "No survivors" (stories/nfl_car_cin_drama.yaml): the same beats, plays and
+# captions; the song is chosen per length against the cut's excitement curve (scripts/excitement.py: surprise +
+# fading afterglow + suspense, from the research on suspense and surprise), and the beats are placed by matching
+# that curve to the song (pacing: excitement) instead of putting one beat on the song's biggest rise.
+title: "Neither side gives in"
+line: "Every swing lands when the music does. A tie is a held breath, not a peak."
+# why this song, per length (filled in once the song is chosen; the captions never mention the music)
+why_song:
+  60: "Vivaldi's Winter hammers out accent after accent. Every big swing in this game lands on one of them, and it eases off while the game holds its breath."
+  120: "Vivaldi's Winter hammers out accent after accent. Every big swing in this game lands on one of them, and it eases off while the game holds its breath."
+pacing: excitement
+# then every beat's result lands on a strong hit in the song (the big swings on the biggest ones)
+land_on_hits: true
+# the last result (the miss) may land up to 4.8 s before the end (default 6): room for the strong hit at the very end
+end_hold: 4.8
+# the clock beats' run-up in slow motion (plan_edit.py slowmo), the callout over it
+slowmo: false
+# clock: "..." on a beat = a "time is running out" callout during its run-up (timeline.py clock_callouts)
+max_words: 16
+caption_max_s: 6.0
+cuts:
+  60:
+    - {step: 41,  say: "It starts as Cincinnati's day. Gio Bernard goes 89 yards. 14–7."}
+    - {step: 89,  say: "Then Andy Dalton starts handing the game away."}
+    - {step: 106, say: "Carolina takes over. Cam Newton runs it in. 24–17."}
+    - {step: 131, say: "Twelve minutes left, and Cincinnati claws back. 24–24."}
+    - {step: 149, say: "Carolina pulls ahead again, 31–24. Under five minutes to save it..."}
+    - {step: 150, say: "...and Cincinnati answers in one breath. 31–31."}
+    - {step: 161, say: "Two minutes left. Nugent puts the Bengals up 34–31. It should be over."}
+    - {step: 177, say: "Five seconds left, down three. One kick to save Carolina. 34–34."}
+    - {step: 208, say: "Overtime. Down three, two minutes left, Gano answers again. 37–37."}
+    - {step: 219, show: [217], say: "Two seconds left. One kick to win it...", then: "Wide right. After all that, nobody wins."}
+  120:
+    - {step: 17,  say: "Carolina strikes first. 7–0."}
+    - {step: 34,  say: "Cincinnati answers right away. 7–7."}
+    - {step: 41,  say: "Then Gio Bernard breaks loose for 89 yards. 14–7, Bengals."}
+    - {step: 74,  say: "Cincinnati takes a 17–10 lead into halftime. It feels like their day."}
+    - {step: 89,  say: "Then Andy Dalton starts handing the game away."}
+    - {step: 91,  say: "Carolina makes him pay at once. 17–17."}
+    - {step: 106, say: "Cam Newton runs it in. Carolina leads 24–17."}
+    - {step: 113, say: "Dalton is picked off again. The Bengals look done."}
+    - {step: 131, say: "Twelve minutes left. Dalton finds Sanu deep. 24–24."}
+    - {step: 147, say: "Under five minutes. Newton finds Olsen. Carolina back in front, 31–24."}
+    - {step: 149, say: "Pacman Jones takes the kickoff. And runs. And runs..."}
+    - {step: 150, say: "...97 yards, and Cincinnati ties it in one breath. 31–31."}
+    - {step: 155, say: "Newton is intercepted. Now Carolina is in trouble."}
+    - {step: 161, say: "Two minutes left. Nugent puts the Bengals up 34–31. It should be over."}
+    - {step: 177, show: [173], say: "Five seconds left, down three. One kick to save Carolina...", then: "Good. 34–34. Overtime."}
+    - {step: 193, say: "Overtime. Nugent puts the Bengals ahead, 37–34. Carolina gets one last chance."}
+    - {step: 208, say: "Two minutes left. Gano answers again. 37–37."}
+    - {step: 219, show: [216, 217], say: "Two seconds left. One kick to win it...", then: "Wide right. Seventy-five minutes, and nobody wins."}

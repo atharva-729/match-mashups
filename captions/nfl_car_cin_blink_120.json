@@ -1,0 +1,116 @@
+[
+{
+"start": 0.15,
+"end": 2.35,
+"step": 17,
+"text": "Carolina scores first."
+},
+{
+"start": 11.02,
+"end": 13.22,
+"step": 34,
+"text": "Cincinnati answers."
+},
+{
+"start": 19.46,
+"end": 22.7,
+"step": 41,
+"text": "Bernard runs 89 yards. Bengals lead 14–7."
+},
+{
+"start": 26.5,
+"end": 30.06,
+"step": 74,
+"text": "A field goal each: 17–10 at the half."
+},
+{
+"start": 35.4,
+"end": 38.0,
+"step": 89,
+"text": "Third quarter: Dalton is intercepted."
+},
+{
+"start": 39.23,
+"end": 41.51,
+"step": 91,
+"text": "Carolina ties it, 17–17."
+},
+{
+"start": 51.52,
+"end": 54.76,
+"step": 106,
+"text": "Cam Newton runs in. Panthers lead 24–17."
+},
+{
+"start": 55.7,
+"end": 57.98,
+"step": 113,
+"text": "Dalton is intercepted again."
+},
+{
+"start": 63.67,
+"end": 67.23,
+"step": 131,
+"text": "Fourth quarter: now every score gets answered. 24–24."
+},
+{
+"start": 71.27,
+"end": 73.55,
+"step": 147,
+"text": "Panthers go ahead, 31–24."
+},
+{
+"start": 78.02,
+"end": 80.3,
+"step": 149,
+"text": "A 97-yard kickoff return..."
+},
+{
+"start": 80.93,
+"end": 83.85,
+"step": 150,
+"text": "...and the Bengals tie it, 31–31."
+},
+{
+"start": 85.3,
+"end": 87.58,
+"step": 155,
+"text": "Cam Newton is intercepted."
+},
+{
+"start": 89.93,
+"end": 92.21,
+"step": 161,
+"text": "Bengals kick ahead, 34–31."
+},
+{
+"start": 94.29,
+"end": 97.85,
+"step": 177,
+"text": "Five seconds left. Panthers kick to tie it."
+},
+{
+"start": 100.34,
+"end": 102.94,
+"step": 193,
+"text": "Overtime. Bengals kick ahead, 37–34."
+},
+{
+"start": 105.8,
+"end": 108.08,
+"step": 208,
+"text": "Panthers answer again, 37–37."
+},
+{
+"start": 111.06,
+"end": 114.15,
+"step": 219,
+"text": "Two seconds left. A 36-yard kick to win it."
+},
+{
+"start": 114.3,
+"end": 116.58,
+"step": 219,
+"text": "Wide right. Nobody wins."
+}
+]

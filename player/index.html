@@ -16,11 +16,17 @@
 <main id="gallery" class="view">
   <h1>Pick a game</h1>
   <p class="lede">Each summary was cut automatically from the full-game broadcast. Open the original, then play the summary.</p>
+  <h2 id="hlHead" class="more hlh" hidden>Highlights</h2>
+  <div id="cardsHL" class="cards"></div>
+  <h2 id="storyHead" class="more" hidden>More story cuts</h2>
   <div id="cards" class="cards"></div>
+  <h2 id="moreHead" class="more" hidden>More games</h2>
+  <div id="cards2" class="cards"></div>
   <p id="empty" class="empty" hidden>No summaries rendered yet. Run <code>python run.py inputs/&lt;job&gt; --v2</code>.</p>
 </main>
 
 <main id="player" class="view" hidden>
+  <div class="playrow">
   <div class="theatre" id="theatre">
   <div class="stage" id="stage">
     <video id="video" playsinline muted preload="auto"></video>
@@ -30,18 +36,21 @@
     <div class="credit" id="credit" aria-live="off"></div>
 
     <div class="cap" id="cap"><span class="bar"></span><span class="txt" id="capText"></span></div>
+    <!-- "time is running out": the broadcast clock magnified + the time left, during a late play's run-up -->
+    <div class="clock" id="clock" aria-live="off"><div class="csb" id="cSb"></div>
+      <div class="ctext"><div class="cwhen" id="cWhen"></div><div class="chead" id="cHead"></div><div class="csub" id="cSub"></div></div></div>
 
     <div class="glow" id="glow" aria-hidden="true"></div>
-    <div class="wpbar" id="vizA" aria-hidden="true">
-      <span class="side l"><b id="vizAway"></b><i id="pAway"></i></span>
-      <div class="track"><div class="fa" id="fillAway"></div><div class="fh" id="fillHome"></div></div>
-      <span class="side r"><i id="pHome"></i><b id="vizHome"></b></span>
+    <div class="meter" id="vizA" aria-hidden="true">
+      <span class="ml"><b class="s">SONG</b><b class="g">GAME</b></span>
+      <canvas id="meterCv"></canvas>
     </div>
 
     <div class="card title" id="titleCard">
       <div class="kicker">Summary of the full game</div>
       <div class="match" id="tMatch"></div>
       <div class="meta" id="tMeta"></div>
+      <div class="why" id="tWhy"></div>
       <a class="yt" id="tLink" target="_blank" rel="noopener">Original on YouTube ↗</a>
     </div>
     <div class="card end" id="endCard" hidden>
@@ -68,6 +77,16 @@
       <button class="tog len" id="tL" data-key="L"><b>L</b><span id="tLlabel">60 s</span></button>
     </div>
   </div>
+  </div>
+  <aside class="match" id="matchPanel" hidden>
+    <div class="mh">Why this song</div>
+    <p class="why" id="mWhy"></p>
+    <canvas id="matchCv" aria-label="Song energy and the game's story, matched"></canvas>
+    <div class="mlegend"><span class="ls">Song energy</span><span class="lg">The game</span><span class="lp">Now</span></div>
+    <p class="mnote">Grey lines pair each part of the song with the part of the game it matches. The marker is where
+      the video is now.</p>
+    <a href="#/" class="mback">← All games</a>
+  </aside>
   </div>
   <div class="below">
     <a href="#/" class="back">← All games</a>

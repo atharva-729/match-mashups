@@ -19,7 +19,7 @@ the lowest-priority ones stop being key (PRIORITY: page moments > TDs > turnover
 swing-only), and the drops are logged. The +-1 s check is advisory (sync precision isn't the goal).
 usage: python scripts/plan_edit.py inputs/<job> [--len 60|120]
 """
-import bisect
+import bisect, json
 import numpy as np
 from scipy.optimize import minimize
 
@@ -87,8 +87,24 @@ def main():
         elif any(w in HIGH[L] for w in st["why"]):
             tier[st["i"]] = "high"
     key_steps = set(tier)
+    sbeats = story_beats(job)
+    global END_HOLD
+    if sbeats:
+        END_HOLD = float(job.story.get("end_hold", 6.0)) if job.story else 6.0   # a story's last moment is its punchline: let it and the reaction play out
+        anchors = [b["step"] for b in sbeats]
+        tier = {s: "must" for s in anchors}
+        key_steps = set(anchors)
+        keep = key_steps | {s for b in sbeats for s in b.get("show", [])}
+        clips = [dict(c) for c in clips]
+        claim_untagged(clips, keep)
+        clips = [c for c in clips if c.get("step") in keep]
+        missing = sorted(s for s in key_steps if not any(c["step"] == s and c["kind"] == "live" for c in clips))
+        if missing:
+            print(f"story: no live footage for steps {missing}")
     src = Source(clips)
     pri = priorities(job, steps) if job.L else {}
+    if sbeats:
+        pri = {s: 1 for s in key_steps}
 
     # ---- units: one per step with live footage (its consecutive live shots) ----
     units, seen = [], set()
@@ -118,7 +134,9 @@ def main():
                       "low": ten[s] < low_thr, "core": (core_pre, core_post), "core_short": short})
     units.sort(key=lambda u: u["E"])
     prio_dropped = []
-    if job.L:      # v2: drop key moments by priority until the rest fit at 1.0x
+    if job.L and sbeats:   # the story decides what stays: shorter cores if needed, never drops
+        units, prio_dropped = prune(units, pri, song_len, ten, drop=False)
+    elif job.L:      # v2: drop key moments by priority until the rest fit at 1.0x
         units, prio_dropped = prune(units, pri, song_len, ten)
         for u in prio_dropped:
             tier.pop(u["step"], None); key_steps.discard(u["step"])
@@ -136,11 +154,25 @@ def main():
                 units.remove(lose); dropped.append(lose); changed = True
                 break
 
+    if sbeats and job.story.get("pacing") == "excitement":   # beats placed by matching the cut's excitement to the song
+        excite_retime(job, units, sbeats, song_len)
+        if job.story.get("land_on_hits"):                    # then each result onto a strong hit, the big ones first
+            land_on_hits(job, units, np.array(al.get("hits", []), float).reshape(-1, 2), song_len, src.total)
+    elif sbeats:   # story pacing: each beat's song time comes from its own footage, not from the game's curve
+        turn = (job.story.get("turn") or {}).get(job.L)
+        if turn is not None:
+            import align
+            turn = (turn, align.song_turn(job))
+            print(f"story: turning beat (step {turn[0]}) on the song's turn at {mmss(turn[1])}")
+        story_retime(units, song_len, turn)
+
     # 2. key targets onto the music's strongest percussive hit nearby (drums, timpani, accents): the strongest hit
     #    within +-1.5 s, preferring nearer ones; else the nearest beat / onset within 0.5 s
     ph = np.array(al.get("hits", []), float).reshape(-1, 2)
     for u in units:
         u["target"] = u["e"]
+        if u.get("hit_locked"):          # land_on_hits already put it on its hit
+            continue
         near = ph[np.abs(ph[:, 0] - u["e"]) <= HIT_WINDOW] if len(ph) else ph
         if len(near):
             score = near[:, 1] - 0.15 * np.abs(near[:, 0] - u["e"])
@@ -182,6 +214,8 @@ def main():
     edl = merge(edl)
     snap_cuts(edl, beats)
     edl = drop_slivers(merge(edl))
+    if sbeats and job.story.get("slowmo"):     # the late "time is running out" plays: their run-up in slow motion
+        slowmo(edl, {u["step"]: u["place"] for u in units}, [b["step"] for b in sbeats if b.get("clock")])
     for e in edl:
         e["song_in"], e["song_out"] = round(e["song_in"], 4), round(e["song_out"], 4)
         e["src_in"], e["src_out"], e["speed"] = round(e["src_in"], 4), round(e["src_out"], 4), round(e["speed"], 4)
@@ -283,7 +317,205 @@ def priorities(job, steps):
     return out
 
 
-def prune(units, pri, song_len, ten):
+def claim_untagged(clips, wanted):
+    """A play that runs while the bug's clock barely moves (a kickoff return after a TD, a run wiped out by a penalty)
+    gets no shots of its own: the tagger credits them to the play before. A wanted step with no live shot takes the
+    previous step's last clock-stop shot, when that step has more than one clock stop (its own result is the first)."""
+    have = {c["step"] for c in clips if c["kind"] == "live"}
+    for s in sorted(wanted - have):
+        prev = max((c["step"] for c in clips if c["kind"] == "live" and c["step"] is not None and c["step"] < s),
+                   default=None)
+        if prev is None:
+            continue
+        stops = [c for c in clips if c["step"] == prev and c["kind"] == "live" and c.get("clock_stop") is not None]
+        if len(stops) >= 2:
+            stops[-1]["step"] = s
+            print(f"story: step {s} takes step {prev}'s last clock-stop shot ({stops[-1]['start']:.1f}-{stops[-1]['end']:.1f} s)")
+
+
+STORY_STRETCH = (4.0, 12.0)    # song seconds per story beat (before scaling to the song)
+
+
+def story_retime(units, song_len, turn=None):
+    """Targets for a story cut: each beat gets the footage between the previous beat's result and its own (at ~1.1x),
+    clipped to STORY_STRETCH, then all are scaled so the last result lands END_HOLD before the end. With a turn
+    (step, song time), the beats up to that step are scaled to end on the song's turn and the rest to fill after it,
+    so the story turns when the music does."""
+    d, prev = [], 0.0
+    for u in units:
+        d.append(float(np.clip((u["E"] - prev) / 1.1, *STORY_STRETCH)))
+        prev = u["E"]
+    k_at = [u["step"] for u in units].index(turn[0]) + 1 if turn and turn[0] in [u["step"] for u in units] else None
+    if k_at:
+        # the turning beat's result lands on the turn: its run-up and the beats before it fill the music before
+        spans = [(0, k_at, 0.0, turn[1]), (k_at, len(units), turn[1], song_len - END_HOLD)]
+    else:
+        spans = [(0, len(units), 0.0, song_len - END_HOLD)]
+    for a, b, t0, t1 in spans:
+        k = (t1 - t0) / max(1e-6, sum(d[a:b]))
+        t = t0
+        for u, x in zip(units[a:b], d[a:b]):
+            t += x * k
+            u["e"] = t
+
+
+MIN_BEAT_GAP = 2.5     # song seconds between two beats' results (excitement pacing)
+
+
+def natural_pace(units, sbeats, song_len):
+    """Each beat's own footage pacing (as story_retime, no turn), scaled so the last result lands END_HOLD before the end.
+    -> (beats [{step, show?}] in unit order, e0[] result times)."""
+    d, prev = [], 0.0
+    for u in units:
+        d.append(float(np.clip((u["E"] - prev) / 1.1, *STORY_STRETCH)))
+        prev = u["E"]
+    e0 = np.cumsum(d) * (song_len - END_HOLD) / max(1e-6, sum(d))
+    by = {b["step"]: b for b in sbeats}
+    return [by.get(u["step"], {"step": u["step"]}) for u in units], e0
+
+
+def excite_retime(job, units, sbeats, song_len):
+    """Excitement pacing (story file `pacing: excitement`): the cut's excitement curve (excitement.cut_curve: each beat a
+    spike of its surprise, fading to the suspense on screen), built on the beats' natural footage pacing, is matched to
+    the song window's energy with the sister matcher (normalise + banded DTW); each beat's result goes to the song time
+    the match pairs it with. So a big swing lands on a surge and the held breath after a tie on a dip. The band keeps
+    every beat within ~5% of the window of its natural place; beats stay in order, MIN_BEAT_GAP apart."""
+    import align, excitement
+    beats, e0 = natural_pace(units, sbeats, song_len)
+    _, cc = excitement.cut_curve(job.gid, beats, e0, song_len)
+    (job.work / str(job.L) / "story_pace.json").write_text(json.dumps(
+        {"steps": [b["step"] for b in beats], "e0": [round(float(x), 3) for x in e0], "song_len": song_len}), encoding="utf-8")
+    d, _ = align.song_curve(job)
+    a = sister.normalise(d["curve"])
+    b = sister.normalise(list(sister.resample(np.asarray(cc, float), sister.N)))
+    _, path = sister.dtw_path(a, b)
+    n = sister.N
+    si, ci = np.zeros(n), np.zeros(n)
+    for i, j in path:
+        si[j] += i; ci[j] += 1
+    m = si / np.maximum(ci, 1)
+    t0, t1 = d["t0"], d["t1"]
+    prev = -np.inf
+    for k, (u, x) in enumerate(zip(units, e0)):
+        i = np.interp(x / song_len * (n - 1), np.arange(n), m)
+        e = t0 + i / (n - 1) * (t1 - t0)
+        e = max(e, prev + MIN_BEAT_GAP, 1.5)
+        e = min(e, song_len - 3.5 - MIN_BEAT_GAP * (len(units) - 1 - k))
+        u["e"] = float(e); prev = u["e"]
+    shift = [u["e"] - x for u, x in zip(units, e0)]
+    print(f"story: excitement pacing, beats moved {min(shift):+.1f} .. {max(shift):+.1f} s from their footage pace")
+
+
+SLOW, SLOW_D, SLOW_VMAX = 0.5, 2.5, 1.6   # slow motion: speed, song seconds before the result, cap on the speed-up before
+
+
+def slowmo(edl, place, steps):
+    """Story file `slowmo: true`: for each beat marked `clock` (the late plays where the clock matters), the last SLOW_D
+    song seconds before its result play at SLOW (the snap / kick / last push, slowed, still landing on its hit at the
+    same song time). The rest of that shot covers the footage the slow part no longer does by playing a little
+    faster (<= SLOW_VMAX); only past that does the shot start a bit later (pre-snap milling, never the play). The slow
+    entries are marked why="slowmo" (timeline.py times the clock callouts on them)."""
+    for s in steps:
+        e = place.get(s)
+        if e is None:
+            continue
+        k = next((i for i, x in enumerate(edl) if x["step"] == s and abs(x["song_out"] - e) < 0.05), None)
+        if k is None:                    # the result inside a merged shot: split the shot at the result first
+            j = next((i for i, x in enumerate(edl) if x["step"] == s and x["song_in"] + 1.0 < e < x["song_out"] - 0.05), None)
+            if j is None:
+                continue
+            x = edl[j]; a = dict(x); b = dict(x)
+            a["song_out"] = b["song_in"] = e
+            a["src_out"] = b["src_in"] = x["src_in"] + (e - x["song_in"]) * x["speed"]
+            edl[j:j + 1] = [a, b]
+            k = j
+        x = edl[k]
+        d = min(SLOW_D, (x["song_out"] - x["song_in"]) - 1.0)
+        if d < 1.0:
+            continue
+        fm = x["src_out"] - SLOW * d
+        head = dict(x); tail = dict(x)
+        span = (x["song_out"] - d) - x["song_in"]
+        head["song_out"] = tail["song_in"] = x["song_out"] - d
+        head["src_out"] = tail["src_in"] = fm
+        if (fm - head["src_in"]) / span > SLOW_VMAX:
+            head["src_in"] = fm - SLOW_VMAX * span
+        head["speed"] = (head["src_out"] - head["src_in"]) / span
+        tail["speed"] = SLOW
+        tail["why"] = "slowmo"
+        edl[k:k + 1] = [head, tail]
+
+
+HIT_REACH = {60: 4.0, 120: 6.0}   # how far a beat may move from its excitement place to land on a hit (song seconds)
+HIT_MIN = 0.35                    # weaker onsets don't count as a hit
+
+
+def land_on_hits(job, units, ph, song_len, src_total=None):
+    """Each beat's result onto one of the song's strong hits (drums, timpani, string accents: align.py `hits`), chosen
+    for the whole sequence at once (dynamic programming): a beat scores its surprise (0.3-1, the big swings weigh
+    most) x the hit's strength, minus a small cost for moving away from its excitement place; beats keep their order
+    and the footage spacing the placer needs (at least the cores apart, at most what the footage between them
+    covers at VMIN), and the last result leaves END_HOLD. A beat with no good hit in reach
+    stays where it is. The footage between beats is then sped up or slowed (0.8-1.35x) to arrive on time."""
+    import excitement
+    if not len(ph):
+        return
+    sur = excitement.curve(job.gid)["surprise"]
+    w = np.array([sur[u["step"]] for u in units], float)
+    w = np.clip(w / max(1e-9, w.max()), 0.3, 1.0)
+    R = HIT_REACH.get(job.L, 4.0)
+    need = [max(MIN_GAP_KEY, (units[i]["core"][1] + units[i + 1]["core"][0]) / CAP["key"][1]) for i in range(len(units) - 1)]
+    pins = {int(k): float(v) for k, v in ((job.story.get("pin") or {}).get(job.L) or {}).items()}
+    cand = []
+    for k, u in enumerate(units):
+        if u["step"] in pins:            # story file `pin: {L: {step: seconds}}`: this result goes exactly there
+            cand.append([(pins[u["step"]], 10.0, True)])
+            continue
+        c = [(u["e"], 0.0, False)]
+        for t, s in ph[(np.abs(ph[:, 0] - u["e"]) <= R) & (ph[:, 1] >= HIT_MIN)]:
+            c.append((float(t), float(w[k] * s - 0.25 * abs(t - u["e"]) / R), True))
+        lo, hi = 0.5 + units[0]["core"][0] / CAP["key"][1] if k == 0 else 0.0, song_len - END_HOLD
+        if k == 0:
+            hi = min(hi, units[0]["E"] / VMIN)                    # the footage before the first beat, at VMIN
+        if k == len(units) - 1 and src_total is not None:
+            lo = max(lo, song_len - (src_total - u["E"]) / VMIN)  # and after the last one
+        cand.append([x for x in c if lo <= x[0] <= hi] or [(min(max(u["e"], lo), hi), 0.0, False)])
+    best = [{i: (x[1], None) for i, x in enumerate(cand[0])}]
+    for k in range(1, len(units)):
+        row = {}
+        for i, (t, sc, _) in enumerate(cand[k]):
+            opts = [(best[-1][j][0] + sc, j) for j, (tp, _, _) in enumerate(cand[k - 1])
+                    if j in best[-1] and need[k - 1] <= t - tp <= (units[k]["E"] - units[k - 1]["E"]) / VMIN]
+            if opts:
+                row[i] = max(opts)
+        if not row:                          # no feasible chain: keep the excitement places
+            return
+        best.append(row)
+    i = max(best[-1], key=lambda j: best[-1][j][0])
+    pick = [None] * len(units)
+    for k in range(len(units) - 1, -1, -1):
+        pick[k] = i
+        i = best[k][i][1]
+    moved = []
+    for k, u in enumerate(units):
+        t, _, on = cand[k][pick[k]]
+        moved.append(t - u["e"])
+        u["e"] = t
+        if on:
+            u["hit_locked"] = True
+            u["hit"] = round(float(ph[np.argmin(np.abs(ph[:, 0] - t)), 1]), 2)
+    n_on = sum(1 for u in units if u.get("hit_locked"))
+    print(f"story: {n_on}/{len(units)} beats land on a hit (moved {min(moved):+.1f} .. {max(moved):+.1f} s)")
+
+
+def story_beats(job):
+    """A story cut's beats for this length: [{step, show?, say?, at?}] from its story file (stories/<name>.yaml)."""
+    if not (job.story and job.L):
+        return None
+    return job.story["cuts"][job.L]
+
+
+def prune(units, pri, song_len, ten, drop=True):
     """Drop key moments, lowest priority first (least tense first within a priority), until every remaining one gets
     its core (run-up + result) at 1.0x: start + sum of pairwise spacing + END_HOLD <= the song."""
     def need(us):
@@ -297,7 +529,7 @@ def prune(units, pri, song_len, ten):
     if need(units) > song_len:          # first: shorter cores (run-up 3 s, result 1.5 s) instead of faster ones
         for u in units:
             u["core"] = u["core_short"]
-    while units and need(units) > song_len:
+    while drop and units and need(units) > song_len:
         lose = max(units, key=lambda u: (pri.get(u["step"], 7), -ten[u["step"]]))
         units.remove(lose); dropped.append(lose)
     return units, dropped

@@ -26,6 +26,7 @@ h1 { font: 600 26px var(--display); letter-spacing: .02em; margin: 6px 0 4px; }
 .empty { color: var(--ink2); }
 
 /* gallery */
+h2.more { font: 600 19px var(--display); letter-spacing: .02em; color: var(--ink2); margin: 34px 0 12px; padding-top: 18px; border-top: 1px solid var(--line); }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
 .gcard { background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px 14px; display: flex; flex-direction: column; gap: 10px; }
 .gcard .teams { display: flex; align-items: center; gap: 10px; font: 600 22px var(--display); letter-spacing: .02em; }
@@ -79,7 +80,9 @@ h1 { font: 600 26px var(--display); letter-spacing: .02em; margin: 6px 0 4px; }
   background: linear-gradient(180deg, rgba(0,0,0,.15) 0%, rgba(0,0,0,.55) 45%, rgba(5,7,9,.94) 100%); transition: opacity .35s; }
 .card.fade { opacity: 0; pointer-events: none; }
 .card .kicker { font: 600 1.2cqw var(--display); letter-spacing: .18em; text-transform: uppercase; color: var(--accent); }
-.card .match { font: 600 4.1cqw/1.1 var(--display); letter-spacing: .01em; margin: .5cqw 0 .6cqw; }
+.card .match { font: 600 4.1cqw/1.1 var(--display); letter-spacing: .01em; margin: .5cqw 0 .6cqw;
+  /* the card title shares the class name with the right panel (.match below): undo the panel box */
+  flex: none; width: auto; background: none; border: 0; border-radius: 0; padding: 0; align-self: stretch; }
 .card .meta { color: var(--ink2); font-size: 1.35cqw; margin-top: .25cqw; }
 .card .meta a { color: var(--ink); }
 .card .yt { margin-top: 1cqw; font-size: 1.3cqw; color: var(--ink); align-self: flex-start; }
@@ -147,3 +150,60 @@ h1 { font: 600 26px var(--display); letter-spacing: .02em; margin: 6px 0 4px; }
 .controls { flex-wrap: wrap; row-gap: 10px; }
 .controls .scrub { order: -1; flex: 1 1 100%; height: 14px; }
 .controls .time { margin-left: auto; }
+
+.gcard .stitle { font: 600 17px var(--display); color: var(--ink); letter-spacing: .02em; }
+
+/* song <-> game match, beside the video (not in fullscreen): at most a quarter of the screen */
+.playrow { display: flex; gap: 18px; align-items: flex-start; justify-content: center; }
+.playrow .theatre { flex: 1 1 auto; min-width: 0; }
+.match { flex: 0 0 auto; width: min(23vw, 340px); box-sizing: border-box; background: var(--bg2); border: 1px solid var(--line);
+  border-radius: 8px; padding: 12px 12px 10px; }
+.match .mh { font: 600 12px var(--display); letter-spacing: .12em; text-transform: uppercase; color: var(--ink2); margin-bottom: 8px; }
+.match canvas { width: 100%; aspect-ratio: 1 / 1; display: block; }
+.match .mlegend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--ink2); margin-top: 6px; }
+.match .mlegend span::before { content: ""; display: inline-block; width: 12px; height: 3px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+.match .ls::before { background: #ff4f8b; } .match .lg::before { background: #3ad1ff; } .match .lp::before { background: #ffd23f; }
+.match .mnote { font-size: 12px; line-height: 1.4; color: var(--ink3); margin: 8px 0 0; }
+@media (max-width: 900px) { .playrow { flex-direction: column; } .match { width: 100%; } .match canvas { aspect-ratio: 2 / 1; } }
+
+/* player view (Atharva, 2026-11-15): the video fills the space, only the seek bar under it; keys do the rest */
+body.inplayer .top { display: none; }
+#player { max-width: none; padding: 14px 18px 8px; }
+#player .controls > :not(.scrub), #player .below { display: none; }
+#player .controls { padding: 10px 0 0; }
+#player .stage, #player .controls { width: min(100%, calc((100vh - 52px) * 16 / 9)); }
+.match .why { font: 600 17px/1.35 var(--display); letter-spacing: .01em; color: var(--ink); margin: 0 0 12px;
+  border-left: 3px solid var(--accent); padding-left: 10px; }
+.match .why:empty { display: none; }
+.match .mback { display: inline-block; margin-top: 10px; font-size: 12px; color: var(--ink3); text-decoration: none; }
+.match .mback:hover { color: var(--ink); }
+.card .why { margin-top: 1.2cqw; font: 600 1.9cqw/1.35 var(--display); color: var(--ink); max-width: 70cqw;
+  border-left: .35cqw solid var(--accent); padding-left: 1.2cqw; }
+.card .why:empty { display: none; }
+
+/* visual (Atharva, 2026-11-16): a two-line meter (the song's loudness, the game's tension) scrolling over the last
+   ~15 s, bottom right; the edge glow pulses on the music's hits in the colour of the team with momentum */
+.meter { position: absolute; right: 3%; bottom: 11.5%; width: 34%; height: 6.2cqw; display: flex; gap: .8cqw; align-items: stretch;
+  background: rgba(8, 10, 13, .55); border-radius: .6cqw; padding: .5cqw .8cqw; opacity: 0; transform: translateY(6px);
+  transition: opacity .6s ease, transform .6s ease; pointer-events: none; }
+.meter.on { opacity: 1; transform: none; }
+.meter .ml { display: flex; flex-direction: column; justify-content: space-around; font: 600 1.05cqw var(--display); letter-spacing: .1em; }
+.meter .ml .s { color: #ff4f8b; } .meter .ml .g { color: #3ad1ff; }
+.meter canvas { flex: 1; min-width: 0; height: 100%; display: block; }
+.glow { transition: opacity .8s ease; }
+
+/* "time is running out" (Atharva, 2026-11-16): lean. During a late play's slowed run-up: the time left in big type and
+   a few words, on a small blurred-glass chip at the top centre (clear of the score bug, the credit and the captions);
+   the video itself is untouched */
+.clock { position: absolute; left: 50%; top: 5%; transform: translate(-50%, -6px); display: flex; flex-direction: column;
+  align-items: center; gap: .15cqw; background: rgba(8, 10, 13, .42); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  border-radius: .7cqw; padding: .55cqw 1.7cqw .7cqw; opacity: 0; transition: opacity .2s ease, transform .2s ease; pointer-events: none; }
+.clock.on { opacity: 1; transform: translate(-50%, 0); }
+.clock .csb, .clock .cwhen { display: none; }
+.clock .chead { font: 700 3.7cqw/1 var(--display); color: #fff; font-variant-numeric: tabular-nums; white-space: nowrap;
+  text-shadow: 0 .1cqw .4cqw rgba(0,0,0,.5); }
+.clock .csub { font: 600 1.55cqw/1.2 var(--display); color: var(--accent); white-space: nowrap; letter-spacing: .02em; }
+
+/* highlights (the published site): the featured cuts, on top */
+h2.more.hlh { color: var(--accent); border-top: 0; padding-top: 0; margin-top: 18px; }
+.gcard.hl { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset, 0 6px 24px rgba(242, 179, 61, .12); }

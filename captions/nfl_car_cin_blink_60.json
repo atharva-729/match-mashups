@@ -1,0 +1,68 @@
+[
+{
+"start": 0.15,
+"end": 3.39,
+"step": 41,
+"text": "Bernard runs 89 yards. Bengals lead 14–7."
+},
+{
+"start": 6.39,
+"end": 8.99,
+"step": 89,
+"text": "Then Dalton throws two interceptions."
+},
+{
+"start": 9.95,
+"end": 12.15,
+"step": 106,
+"text": "Panthers lead 24–17."
+},
+{
+"start": 13.6,
+"end": 17.16,
+"step": 131,
+"text": "Fourth quarter: now every score gets answered. 24–24."
+},
+{
+"start": 17.86,
+"end": 21.74,
+"step": 149,
+"text": "Panthers go ahead 31–24. A 97-yard kick return answers."
+},
+{
+"start": 24.29,
+"end": 26.57,
+"step": 150,
+"text": "Bengals tie it, 31–31."
+},
+{
+"start": 30.66,
+"end": 32.95,
+"step": 161,
+"text": "Bengals kick ahead, 34–31."
+},
+{
+"start": 34.98,
+"end": 37.9,
+"step": 177,
+"text": "Five seconds left. Panthers tie it."
+},
+{
+"start": 43.25,
+"end": 46.17,
+"step": 208,
+"text": "Overtime: a field goal each. 37–37."
+},
+{
+"start": 50.79,
+"end": 54.15,
+"step": 219,
+"text": "Two seconds left. A 36-yard kick to win."
+},
+{
+"start": 54.3,
+"end": 56.58,
+"step": 219,
+"text": "Wide right. Nobody wins."
+}
+]

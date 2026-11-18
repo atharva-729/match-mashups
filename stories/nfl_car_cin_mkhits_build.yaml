@@ -1,0 +1,45 @@
+# Story cut: Panthers @ Bengals 2014 W6 (37-37, OT), footage from nfl_mk_car_cin.
+# The Mountain King (build-up) version, beats on its hits, of the excitement-matched version of "No survivors" (stories/nfl_car_cin_drama.yaml): the same beats, plays and
+# captions; the song is chosen per length against the cut's excitement curve (scripts/excitement.py: surprise +
+# fading afterglow + suspense, from the research on suspense and surprise), and the beats are placed by matching
+# that curve to the song (pacing: excitement) instead of putting one beat on the song's biggest rise.
+title: "No survivors · Mountain King (build-up)"
+line: "Every swing lands when the music does. A tie is a held breath, not a peak."
+# why this song, per length (filled in once the song is chosen; the captions never mention the music)
+why_song: "In the Hall of the Mountain King plays one tune over and over, louder each time. This game did the same, and every big swing lands on one of its hits."
+pacing: excitement
+# then every beat's result lands on a strong hit in the song (the big swings on the biggest ones)
+land_on_hits: true
+max_words: 16
+caption_max_s: 6.0
+cuts:
+  60:
+    - {step: 41,  say: "Gio Bernard breaks free and runs 89 yards. Bengals 14–7."}
+    - {step: 89,  say: "Then Andy Dalton starts throwing the game away."}
+    - {step: 106, say: "Carolina pounces. Cam Newton powers in. Panthers 24–17."}
+    - {step: 131, say: "Fourth quarter. Dalton goes deep to Sanu. 24–24. Now it's war."}
+    - {step: 149, say: "Panthers go up 31–24. Pacman Jones answers..."}
+    - {step: 150, say: "...97 yards. Bengals tie it, 31–31. Back from the dead."}
+    - {step: 161, say: "Nugent kicks Cincinnati ahead, 34–31. Surely that's the end."}
+    - {step: 177, say: "Five seconds left. Gano from 44 ties it. 34–34. Neither team will die."}
+    - {step: 208, say: "Overtime. A field goal each. 37–37. Still nobody falls."}
+    - {step: 219, show: [217], say: "Two seconds. Nugent from 36, to end it...", then: "Wide right. Seventy-five minutes, and nobody survives."}
+  120:
+    - {step: 17,  say: "Cam Newton draws first blood. Panthers 7–0."}
+    - {step: 34,  say: "Cincinnati hits right back. 7–7."}
+    - {step: 41,  say: "Then Gio Bernard breaks free. 89 yards. Bengals 14–7."}
+    - {step: 74,  say: "A field goal each. Cincinnati carries a 17–10 lead into halftime."}
+    - {step: 89,  say: "Third quarter. Dalton throws it straight to the enemy."}
+    - {step: 91,  say: "Carolina makes him pay at once. 17–17."}
+    - {step: 106, say: "Cam Newton bulldozes into the end zone. Panthers 24–17."}
+    - {step: 113, say: "Dalton does it again. Intercepted. The Bengals are sinking."}
+    - {step: 131, say: "Fourth quarter. Dalton finds Sanu deep. 24–24. Now it's war."}
+    - {step: 147, say: "Newton strikes back. Olsen in the end zone. Panthers 31–24."}
+    - {step: 149, say: "Pacman Jones takes the kickoff. And runs. And runs..."}
+    - {step: 150, say: "...97 yards, and the Bengals punch it in. 31–31. Back from the dead."}
+    - {step: 155, say: "Newton forces it deep. Intercepted. Now Carolina is the one dying."}
+    - {step: 161, say: "Nugent kicks Cincinnati ahead, 34–31. Two minutes left. Surely that's the end."}
+    - {step: 177, show: [173], say: "Final seconds. Gano, from 44 yards...", then: "Good. 34–34. Overtime."}
+    - {step: 193, say: "Overtime. Nugent puts Cincinnati up 37–34. But Carolina gets one last chance."}
+    - {step: 208, say: "Gano answers. 37–37. Neither team will stay buried."}
+    - {step: 219, show: [216, 217], say: "Two seconds. Nugent, to end it all...", then: "Wide right. Seventy-five minutes of war, and nobody survives."}

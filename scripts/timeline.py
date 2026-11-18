@@ -52,6 +52,108 @@ def story_curve(job, n=80):
     return [round(float(x), 3) for x in v]
 
 
+def match_curves(job):
+    """The song <-> game match, as the sister page draws it: the song window's energy curve, the game's curve (story
+    curve, or tension in page mode), the DTW path between them, and each step's x on the game curve (0-1)."""
+    import align as A
+    d, _ = A.song_curve(job)
+    a = sister.normalise(d["curve"])
+    if job.league == "NASCAR":
+        import nascar
+        r = nascar.race(job)
+        level, tau = r["level"], r["tau"]
+    elif job.cfg.get("alignment", "page") == "story":
+        import story
+        tau, level, _ = story.story(job.gid, job.league)
+    else:
+        full = sister.curve(job.gid)
+        level = list(sister.resample(np.asarray(full["tension"], float), A.N))
+        tau = list(np.linspace(0, 1, full["n_steps"]))
+    b = sister.normalise(list(level))
+    _, path = sister.dtw_path(a, b)
+    r3 = lambda v: [round(float(x), 3) for x in v]
+    mm = lambda v: (np.asarray(v, float) - np.min(v)) / max(1e-9, float(np.ptp(v)))      # 0-1 for drawing
+    return {"song": r3(mm(a)), "game": r3(mm(b)), "path": [[int(i), int(j)] for k, (i, j) in enumerate(path) if k % 3 == 0],
+            "t0": round(float(d["t0"]), 3), "t1": round(float(d["t1"]), 3), "tau": r3(tau)}
+
+
+def song_live(job, n):
+    """The song stem as it plays, per sample: loudness (RMS in dB, 0-1 between its quiet and loud ends, ~0.5 s
+    smoothing) and hits (percussive onset strength, 0-1). The hits drive the glow's pulse; build() draws the meter's
+    song line from the matcher's song energy instead of this loudness."""
+    import librosa, subprocess
+    sr = 22050                          # decode with ffmpeg: librosa >= 1.0 has no audioread fallback for AAC/m4a
+    pcm = subprocess.run(["ffmpeg", "-v", "error", "-i", str(job.out_l / "song.m4a"), "-ac", "1", "-ar", str(sr),
+                          "-f", "f32le", "-"], capture_output=True, check=True).stdout
+    y = np.frombuffer(pcm, dtype=np.float32).copy()
+    hop = sr // RATE
+    rms = librosa.feature.rms(y=y, frame_length=2 * hop, hop_length=hop)[0]
+    db = 20 * np.log10(np.maximum(rms, 1e-5))
+    lo, hi = np.percentile(db, 5), np.percentile(db, 98)
+    env = np.clip((db - lo) / max(1e-6, hi - lo), 0, 1)
+    env = np.convolve(np.pad(env, (2, 2), mode="edge"), np.ones(5) / 5, mode="same")[2:-2]
+    on = librosa.onset.onset_strength(y=librosa.effects.percussive(y), sr=sr, hop_length=hop)
+    hit = np.clip(on / max(1e-6, np.percentile(on, 97)), 0, 1)
+    fit = lambda v: [round(float(x), 3) for x in np.interp(np.arange(n), np.arange(len(v)), v)]
+    return fit(env), fit(hit)
+
+
+CLOCK_LEAD, CLOCK_CLEAR = 3.4, 0.35   # a clock callout: from this long before the play's result to just before it
+
+
+def clock_callouts(job):
+    """"Time is running out" callouts for the story beats marked `clock: "<line>"`: the game clock at the snap of the
+    play (sister scoreboard data: quarter + seconds left) as a headline, the story's line under it, and the scoreboard
+    at the snap (score, quarter, clock: drawn by the player, so it agrees with the headline; the broadcast's own clock
+    in the footage has often run on past the snap). Shown during the
+    run-up, cleared just before the result so the play itself lands on the music. -> [{start, end, step, head, sub}]"""
+    if not job.story:
+        return []
+    beats = [b for b in job.story["cuts"].get(job.L, []) if b.get("clock")]
+    if not beats:
+        return []
+    rep = {int(k): v for k, v in job.load("plan_report.json").items()}
+    slow = {x["step"]: x for x in job.load("edl.json") if x.get("why") == "slowmo"}
+    sb = sister.curve(job.gid)["sb"]
+    out, prev_end = [], 0.0
+    for b in beats:
+        s, e = b["step"], (rep.get(b["step"]) or {}).get("planned")
+        if e is None:
+            continue
+        q, c = sb["q"][s - 1], sb["c"][s - 1]
+        when = "OVERTIME" if q >= 5 else ("4TH QUARTER" if q == 4 else f"Q{q}")
+        start = max(prev_end + 0.3, e - CLOCK_LEAD)
+        if s in slow:                    # with slow motion: exactly over the slowed run-up
+            start = max(prev_end + 0.3, slow[s]["song_in"] - 0.25)
+        out.append({"start": round(start, 2), "end": round(e - CLOCK_CLEAR, 2), "step": s,
+                    "head": f"{c // 60}:{c % 60:02d} LEFT", "when": when, "sub": b["clock"],
+                    "sa": int(sb["a"][s - 1]), "sh": int(sb["h"][s - 1]), "q": "OT" if q >= 5 else f"Q{q}",
+                    "clk": f"{c // 60}:{c % 60:02d}"})
+        prev_end = e - CLOCK_CLEAR
+    return out
+
+
+def game_live(job, n):
+    """For an excitement-paced story cut: the game line the music was matched to, i.e. the cut's excitement curve
+    (excitement.cut_curve) on the beats' planned result times, 0-1, per sample. The meter's game line and the glow's
+    strength use it instead of the whole game's tension. None for other cuts."""
+    if not (job.story and job.story.get("pacing") == "excitement"):
+        return None
+    import excitement
+    rep = {int(k): v for k, v in job.load("plan_report.json").items()}
+    by = {b["step"]: b for b in job.story["cuts"][job.L]}
+    steps = [s for s in by if (rep.get(s) or {}).get("planned") is not None]
+    t, cc = excitement.cut_curve(job.gid, [by[s] for s in steps], [rep[s]["planned"] for s in steps], (n - 1) / RATE)
+    cc = (cc - cc.min()) / max(1e-9, float(np.ptp(cc)))
+    return [round(float(x), 3) for x in np.interp(np.arange(n) / RATE, t, cc)]
+
+
+def why_song(job):
+    """The story's "why this song" line; a story with one song per length keys it by length ({60: ..., 120: ...})."""
+    w = (job.story or {}).get("why_song") or job.cfg.get("why_song", "")
+    return w.get(job.L, "") if isinstance(w, dict) else w
+
+
 def build(job):
     al, edl = job.load("alignment.json"), job.load("edl.json")
     if job.league == "NASCAR":          # a race: no win probability; the glow follows the race's tension
@@ -96,9 +198,22 @@ def build(job):
         "samples": [[int(steps[i]), round(float(wv[i]), 4), round(float(tv[i]), 4)] for i in range(n)],
         "captions": json.loads(cap_f.read_text(encoding="utf-8")) if cap_f.exists() else [],
         "files": {"video": "video.mp4", "game": "game.m4a", "song": "song.m4a"},
-        "story": job.cfg.get("story_line", ""),
+        "story": (job.story or {}).get("line") or job.cfg.get("story_line", ""),
+        "story_title": (job.story or {}).get("title", ""),
+        "why_song": why_song(job),
         "curve": story_curve(job),
+        "match": match_curves(job),
     }
+    _, out["song_hit"] = song_live(job, n)
+    out["clock"] = clock_callouts(job)
+    ge = game_live(job, n)
+    if ge is not None:
+        out["game_env"] = ge
+    # the meter's song line = the song energy the game was matched to (the right panel's top curve), on the cut's
+    # clock. The rendered stem's own loudness is flattened by loudnorm (the quiet opening read as loud).
+    m = out["match"]
+    out["song_env"] = [round(float(x), 3) for x in
+                       np.interp(np.arange(n) / RATE, np.linspace(m["t0"], m["t1"], len(m["song"])), m["song"])]
     (job.out_l / "timeline.json").write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
     return out
 
@@ -113,7 +228,7 @@ def gallery():
         tl = json.loads((d / str(lens[-1]) / "timeline.json").read_text(encoding="utf-8"))
         cards.append({"job": d.name, "title": tl["title"], "final": tl["final"], "season": tl["season"],
                       "week": tl["week"], "teams": tl["teams"], "song": tl["song"], "youtube": tl["youtube"],
-                      "story": tl.get("story", ""), "curve": tl.get("curve"), "sport": tl.get("sport", "NFL"),
+                      "story": tl.get("story", ""), "story_title": tl.get("story_title", ""), "curve": tl.get("curve"), "sport": tl.get("sport", "NFL"),
                       "source_label": tl.get("source_label") or "Original game on YouTube",
                       "lengths": lens})
     (ROOT / "outputs" / "gallery.json").write_text(json.dumps(cards, ensure_ascii=False, indent=1), encoding="utf-8")

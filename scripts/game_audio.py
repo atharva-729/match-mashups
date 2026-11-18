@@ -91,7 +91,7 @@ class Pauses:
 
 def replay_map(job):
     """reel time -> replay time, per section."""
-    f = job.inp / "replay" / "reel.json"
+    f = job.foot_inp / "replay" / "reel.json"
     if not f.exists():                         # footage is a highlights video: its own sound, 1:1
         return [(0.0, 1e9, 0.0)]
     m = json.loads(f.read_text(encoding="utf-8"))
@@ -119,7 +119,7 @@ def runs(edl, secs):
 
 
 def build(job, edl, L, out_path):
-    src = job.inp / "replay" / "full_audio.m4a"
+    src = job.foot_inp / "replay" / "full_audio.m4a"
     if not src.exists():                       # highlights video: the sound is in part1.mp4
         src = job.parts[0]
     secs = replay_map(job)

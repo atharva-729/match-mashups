@@ -1,0 +1,29 @@
+# Story cut: Panthers @ Bengals 2014 W6 (37-37, OT), footage from nfl_mk_car_cin. The kicker's angle: the game
+# comes down to two kickers trading field goals; Nugent makes every one until the last.
+# Format: see nfl_car_cin_blink.yaml.
+title: "The last kick"
+line: "Two kickers trade field goals. The last one misses."
+why_song: "In the Hall of the Mountain King creeps along, then repeats one tune, louder each time, until it bursts. The end of this game did the same: kick, answer, kick, answer, then the miss."
+turn: {60: 161, 120: 161}
+cuts:
+  60:
+    - {step: 150, show: [149], say: "Four minutes left. The Bengals tie it, 31–31."}
+    - {step: 161, say: "Bengals kicker Mike Nugent: good from 38. 34–31."}
+    - {step: 177, say: "Five seconds left. Panthers kicker Graham Gano ties it."}
+    - {step: 193, say: "Overtime. Nugent again, from 42. 37–34."}
+    - {step: 208, say: "Gano again, from 36. 37–37."}
+    - {step: 216, say: "Bengals drive into range."}
+    - {step: 219, show: [217], say: "Nugent, 36 yards, to win it.", then: "Wide right. A tie."}
+  120:
+    - {step: 74,  say: "Bengals kicker Mike Nugent: good from 44 before the half."}
+    - {step: 131, say: "Fourth quarter. The offenses trade touchdowns."}
+    - {step: 150, show: [147, 149], say: "Four minutes left. The Bengals tie it, 31–31."}
+    - {step: 157, say: "A Bengals touchdown is wiped out by a penalty."}
+    - {step: 161, say: "So Nugent kicks: good from 38. 34–31."}
+    - {step: 169, show: [165, 167], say: "Carolina drives, and converts on fourth down."}
+    - {step: 177, show: [173], say: "Five seconds left. Panthers kicker Graham Gano ties it, 34–34."}
+    - {step: 193, show: [184, 189], say: "Overtime. Nugent again, from 42. 37–34."}
+    - {step: 208, show: [204, 207], say: "Gano again, from 36. 37–37."}
+    - {step: 216, show: [213, 214], say: "Bengals drive into range."}
+    - {step: 217, say: "They run the clock down to two seconds."}
+    - {step: 219, say: "Nugent, 36 yards, to win it.", then: "Wide right. A 37–37 tie."}

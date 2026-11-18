@@ -13,7 +13,7 @@ v2 (--len 60|120) writes three files to outputs/<job>/<L>/ instead (the player d
 plus Checkpoint 3 (lengths, no audio in the video, click check at every audio cut, --debug labels at 4 cuts).
 usage: python scripts/render.py inputs/<job> [--len 60|120] [--debug] [--check-only]
 """
-import json, shutil, subprocess, sys
+import json, re, shutil, subprocess, sys
 from pathlib import Path
 
 import cv2
@@ -54,7 +54,7 @@ def video_graph(job, edl, fps):
         e["_fade"] = nxt is not None and is_cut(e, nxt) and nxt["step"] == e["step"]   # a cut inside one step
         e["_n"] = n + (xf if e["_fade"] else 0)
         src_len = e["_n"] / fps * e["speed"] + 0.5
-        inputs += ["-ss", f"{e['src_in']:.4f}", "-t", f"{src_len:.4f}", "-i", str(job.inp / e["part"])]
+        inputs += ["-ss", f"{e['src_in']:.4f}", "-t", f"{src_len:.4f}", "-i", str(job.foot_inp / e["part"])]
         chain.append(f"[{i}:v]setpts=(PTS-STARTPTS)/{e['speed']:.6f},fps={fps},"
                      f"scale={W}:{H}:force_original_aspect_ratio=decrease,pad={W}:{H}:(ow-iw)/2:(oh-ih)/2,setsar=1,"
                      f"tpad=stop_mode=clone:stop_duration=3,trim=end_frame={e['_n']},setpts=PTS-STARTPTS,"
@@ -128,6 +128,17 @@ def srt(edl, ev, path, pin=r"{\an7}"):
 
 
 ENC = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p"]   # QSV tested: no faster here
+def _filter_script_flag():
+    """ffmpeg >= 7.1 reads a filter graph from a file with -/filter_complex (9.x removed -filter_complex_script);
+    older builds only have -filter_complex_script."""
+    out = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True).stdout
+    m = re.search(r"ffmpeg version n?(\d+)\.(\d+)", out)
+    return "-/filter_complex" if not m or (int(m.group(1)), int(m.group(2))) >= (7, 1) else "-filter_complex_script"
+
+
+FC_SCRIPT = _filter_script_flag()
+if "--hq" in sys.argv:      # a cut to share: near-lossless from the source (the share export re-encodes it once more)
+    ENC = ["-c:v", "libx264", "-preset", "slow", "-crf", "14", "-pix_fmt", "yuv420p"]
 
 
 def final(job, edl, fps, al, song_len, work, out, debug):
@@ -148,7 +159,7 @@ def final(job, edl, fps, al, song_len, work, out, debug):
     script = work / ("graph_debug.txt" if debug else "graph.txt")
     script.write_text(";\n".join(chain), encoding="utf-8")
     run(["ffmpeg", "-v", "error", "-y", *inputs, "-i", str(job.song), "-loop", "1", "-framerate", str(fps),
-         "-t", f"{song_len:.3f}", "-i", "band.png", "-filter_complex_script", script.name, "-map", "[v]", "-map", "[a]",
+         "-t", f"{song_len:.3f}", "-i", "band.png", FC_SCRIPT, script.name, "-map", "[v]", "-map", "[a]",
          "-t", f"{song_len:.3f}", *ENC, "-r", str(fps), "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart",
          str(out)], cwd=work)
 
@@ -174,7 +185,7 @@ def render_v2(job, debug):
             ch.append("[vcat]null[v]")
         script = work / ("graph_debug.txt" if dbg else "graph.txt")
         script.write_text(";\n".join(ch), encoding="utf-8")
-        run(["ffmpeg", "-v", "error", "-y", *inputs, "-filter_complex_script", script.name, "-map", "[v]", "-an",
+        run(["ffmpeg", "-v", "error", "-y", *inputs, FC_SCRIPT, script.name, "-map", "[v]", "-an",
              "-t", f"{L:.3f}", *ENC, "-r", str(fps), "-movflags", "+faststart", str(out / name)], cwd=work)
     t_v = time.time() - t0
     a, b = job.cfg[f"song_start_{job.L}"], job.cfg[f"song_end_{job.L}"]
