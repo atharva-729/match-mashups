@@ -95,6 +95,27 @@ def drill(st, L):
             f'<table class="dt">{rows}</table></template>')
 
 
+def match_svg(job, L=120, W=400, H=150):
+    """The song ↔ game match, as in the player: song energy on top, the game below, grey lines pair matched moments."""
+    m = json.loads((ROOT / "outputs" / job / str(L) / "timeline.json").read_text(encoding="utf-8"))["match"]
+    N, pad = len(m["song"]), 4
+    band = (H - 3 * pad - 24) / 2
+    top, bot = pad + 12, pad + 12 + band + pad + 12
+    X = lambda i: pad + i / (N - 1) * (W - 2 * pad)
+    Y = lambda ys, y0: lambda i: y0 + band - ys[max(0, min(N - 1, int(round(i))))] * band
+    ya, yb = Y(m["song"], top), Y(m["game"], bot)
+    pairs = "".join(f'M{X(i):.1f},{ya(i):.1f}L{X(j):.1f},{yb(j):.1f}' for i, j in m["path"])
+    line = lambda ys, y: "".join(f'{"M" if i == 0 else "L"}{X(i):.1f},{y(i):.1f}' for i in range(N))
+    return (f'<svg class="mx" viewBox="0 0 {W} {H}" preserveAspectRatio="none" aria-label="song energy vs the game">'
+            f'<path d="{pairs}" stroke="#ffffff22" stroke-width="1"/>'
+            f'<path d="{line(m["song"], ya)}" stroke="#ff4f8b"/><path d="{line(m["game"], yb)}" stroke="#3ad1ff"/>'
+            f'<text x="6" y="11">SONG</text><text x="6" y="{bot - 2:.0f}">GAME</text></svg>')
+
+
+MX_KEY = ('<div class="mxk"><span><i style="background:#ff4f8b"></i>song energy</span><span><i style="background:#3ad1ff"></i>the game</span>'
+          '<span><i style="background:#ffffff55"></i>matched moments</span></div>')
+
+
 def song_short(s):
     return next((v for k, v in SONGS if k in s["title"]), s["title"])
 
@@ -110,7 +131,8 @@ def card(g, small=False):
             f'<div class="media"><video muted loop playsinline preload="none" poster="{MEDIA_BASE}poster_{job}.jpg" '
             f'data-src="{MEDIA_BASE}preview_{job}.mp4"></video><span class="sport">{e(g["sport"])}</span><span class="pl">▶</span></div>'
             f'<div class="body"><div class="song">♪ {e(song_short(g["song"]))}</div><h3>{e(head)}</h3>'
-            f'<div class="when">{e(g["final"] if small else when)}</div><p>{e(g.get("story") or "")}</p>'
+            f'<div class="when">{e(g["final"] if small else when)}</div>{match_svg(job)}'
+            f'<p><b class="exp">What to expect:</b> {e(g.get("story") or "")}</p>'
             f'<div class="lens"><a href="{play}60">60 s</a><a href="{play}120">120 s</a></div></div></div>')
 
 
@@ -130,7 +152,13 @@ h1,h2,h3,.num{font-family:"Space Grotesk",Inter,system-ui,sans-serif}
 @keyframes shine{to{background-position:200% center}}
 /* hero */
 .hero{min-height:78vh;display:grid;grid-template-columns:1fr;max-width:760px;align-items:center;padding:36px 0}
-.game{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 18px;margin:0 0 18px}
+.game{display:grid;grid-template-columns:1fr 1.15fr;gap:22px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px 20px;margin:0 0 18px}
+.game>*{min-width:0} .game .meta{margin:2px 0 8px} .game p{margin:10px 0 0;color:#c9d0da} .game .hint{font-size:13px;color:var(--mut)}
+.exp{color:var(--acc)}
+svg.mx{height:92px;margin:8px 0 2px;background:#0b0e14;border-radius:8px}
+svg.mx path{fill:none;stroke-width:1.8;vector-effect:non-scaling-stroke} svg.mx text{fill:#8f99a8;font:600 9px Inter,sans-serif;letter-spacing:.1em}
+.gc svg.mx{height:190px;margin:0}
+.mxk{display:flex;flex-wrap:wrap;gap:6px 16px;color:var(--mut);font-size:12.5px;margin-top:8px} .mxk i{display:inline-block;width:16px;height:3px;border-radius:2px;margin-right:6px;vertical-align:middle}
 .game .tm{font:700 20px "Space Grotesk"} .game .tm .a{color:#0085CA} .game .tm .h{color:#FB4F14} .game .meta{color:var(--mut);font-size:14px}
 .game .song{--c2:var(--acc)}
 .cut{display:grid;grid-template-columns:1.6fr 1fr;gap:22px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;margin:0 0 16px}
@@ -229,7 +257,7 @@ table.dt{width:100%;border-collapse:collapse;font-size:13.5px} .dt td{padding:6p
 .dt i{font-style:normal;font-size:11px;color:var(--green);border:1px solid #3ecf8e66;border-radius:5px;padding:0 5px;margin-left:6px}
 footer{color:var(--mut);font-size:12.5px;text-align:center;padding:30px 0 50px}
 .rv{opacity:0;transform:translateY(18px);transition:opacity .7s,transform .7s} .rv.in{opacity:1;transform:none}
-@media (max-width:900px){.hero{min-height:auto;padding-top:28px}.cut{grid-template-columns:1fr}.scrollhint{display:none}.pair,.res{grid-template-columns:1fr}
+@media (max-width:900px){.hero{min-height:auto;padding-top:28px}.cut,.game{grid-template-columns:1fr}.scrollhint{display:none}.pair,.res{grid-template-columns:1fr}
  .stats{grid-template-columns:1fr 1fr}.grid.four{grid-template-columns:1fr 1fr}.cols{grid-template-columns:1fr}}
 @media (max-width:560px){.wrap{padding:0 16px}.grid.four{grid-template-columns:1fr}.stat .num{font-size:26px}}
 @media (prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}.rv{opacity:1;transform:none}}
@@ -334,9 +362,12 @@ def main():
 <section id="watch" class="rv">
  <p class="kicker">The featured cut</p>
  <h2>Neither side gives in</h2>
- <div class="game"><span class="tm"><span class="a">Carolina Panthers</span> @ <span class="h">Cincinnati Bengals</span></span>
-  <span class="meta">NFL · 2014 season, Week 6 · Final <b>37–37</b> after overtime</span><span class="song">♪ Vivaldi · Winter</span></div>
- <p class="sub">Every score is answered, each with less time left. Then a 36-yard kick misses wide right with 2 s to go. Same game, same song, two lengths:</p>
+ <div class="game"><div class="gi"><span class="tm"><span class="a">Carolina Panthers</span> @ <span class="h">Cincinnati Bengals</span></span>
+  <div class="meta">NFL · 2014 season, Week 6 · Final <b>37–37</b> after overtime</div><span class="song">♪ Vivaldi · Winter</span>
+  <p><b class="exp">What to expect:</b> a rollercoaster. Every score is answered, each with less time left. Then a 36-yard kick misses wide right with 2 s to go.</p>
+  <p class="hint">The chart is the selling point: the <b style="color:#ff4f8b">song's energy</b> was matched to <b style="color:#3ad1ff">the game's excitement</b>, so the music rises when the game does.</p></div>
+  <div class="gc">{match_svg(JOB, W=560, H=190)}{MX_KEY}</div></div>
+ <p class="sub">Same game, same song, two lengths:</p>
  <div class="cut rec">{vid(120, s120)}<div><span class="badge">★ Watch this one</span>
   <div class="len">120 s<small>the full story</small></div>
   <h3>The story has room to build</h3>
@@ -352,7 +383,8 @@ def main():
 <section id="games" class="rv">
  <p class="kicker">More games, more songs</p>
  <h2>Every game has its own shape</h2>
- <p class="sub">Hover to preview, click to watch with captions and the live music-vs-game meter.</p>
+ <p class="sub">Each chart shows the game's shape against its song. Hover to preview, click to watch.</p>
+ {MX_KEY}<div style="height:14px"></div>
  <div class="grid">{"".join(card(g) for g in games)}</div>
 </section>
 
