@@ -19,7 +19,17 @@ h1,h2,h3,.num{font-family:"Space Grotesk",Inter,system-ui,sans-serif}
 .grad{background:var(--grad);background-size:200% auto;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shine 6s linear infinite}
 @keyframes shine{to{background-position:200% center}}
 /* hero */
-.hero{min-height:100vh;display:grid;grid-template-columns:1fr 1.15fr;gap:42px;align-items:center;padding:36px 0}
+.hero{min-height:78vh;display:grid;grid-template-columns:1fr;max-width:760px;align-items:center;padding:36px 0}
+.game{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 18px;margin:0 0 18px}
+.game .tm{font:700 20px "Space Grotesk"} .game .tm .a{color:#0085CA} .game .tm .h{color:#FB4F14} .game .meta{color:var(--mut);font-size:14px}
+.game .song{--c2:var(--acc)}
+.cut{display:grid;grid-template-columns:1.6fr 1fr;gap:22px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;margin:0 0 16px}
+.cut.rec{border-color:transparent;background:linear-gradient(var(--panel),var(--panel)) padding-box,var(--grad) border-box;box-shadow:0 0 40px #ff4f8b1f}
+.cut video,.cut .nov{border-radius:10px}
+.cut .len{font:700 34px "Space Grotesk";line-height:1} .cut .len small{font-size:15px;color:var(--mut);font-weight:500;margin-left:6px}
+.badge{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#0b0d12;background:var(--grad);border-radius:99px;padding:3px 10px;margin-bottom:10px}
+.badge.alt{background:var(--panel2);color:var(--mut);border:1px solid var(--line)}
+.cut h3{margin:8px 0 6px;font-size:19px} .cut p{color:#c9d0da;margin:0 0 8px} .cut .fig{color:var(--mut);font-size:13px}
 .tag{display:inline-flex;align-items:center;gap:10px;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--acc);border:1px solid #5a4a22;background:#f2b33d0d;border-radius:99px;padding:5px 13px}
 .eq{display:inline-flex;gap:2px;align-items:flex-end;height:12px}.eq i{width:3px;background:var(--acc);border-radius:2px;animation:eq 1s ease-in-out infinite}
 .eq i:nth-child(2){animation-delay:-.3s}.eq i:nth-child(3){animation-delay:-.6s}.eq i:nth-child(4){animation-delay:-.15s}
@@ -109,7 +119,7 @@ table.dt{width:100%;border-collapse:collapse;font-size:13.5px} .dt td{padding:6p
 .dt i{font-style:normal;font-size:11px;color:var(--green);border:1px solid #3ecf8e66;border-radius:5px;padding:0 5px;margin-left:6px}
 footer{color:var(--mut);font-size:12.5px;text-align:center;padding:30px 0 50px}
 .rv{opacity:0;transform:translateY(18px);transition:opacity .7s,transform .7s} .rv.in{opacity:1;transform:none}
-@media (max-width:900px){.hero{grid-template-columns:1fr;min-height:auto;padding-top:28px}.scrollhint{display:none}.pair,.res{grid-template-columns:1fr}
+@media (max-width:900px){.hero{min-height:auto;padding-top:28px}.cut{grid-template-columns:1fr}.scrollhint{display:none}.pair,.res{grid-template-columns:1fr}
  .stats{grid-template-columns:1fr 1fr}.grid.four{grid-template-columns:1fr 1fr}.cols{grid-template-columns:1fr}}
 @media (max-width:560px){.wrap{padding:0 16px}.grid.four{grid-template-columns:1fr}.stat .num{font-size:26px}}
 @media (prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}.rv{opacity:1;transform:none}}
@@ -130,8 +140,6 @@ footer{color:var(--mut);font-size:12.5px;text-align:center;padding:30px 0 50px}
   <div class="cta"><button class="btn pri" id="watch120">▶ Watch the 2-min cut</button>
    <a class="btn" href="#games">See all games ↓</a><a class="btn" href="player/">Open the player →</a></div>
  </div>
- <div class="screen"><video autoplay muted loop playsinline poster="https://github.com/atharva-729/match-mashups/releases/download/media-v1/hero_poster.jpg" src="https://github.com/atharva-729/match-mashups/releases/download/media-v1/hero_loop.mp4"></video>
-  <span class="chip"><span class="dot"></span>Panthers 37 · Bengals 37 (OT) · ♪ Vivaldi · Winter</span></div>
 </header>
 <div class="scrollhint">scroll ↓</div>
 
@@ -145,12 +153,19 @@ footer{color:var(--mut);font-size:12.5px;text-align:center;padding:30px 0 50px}
 <section id="watch" class="rv">
  <p class="kicker">The featured cut</p>
  <h2>Neither side gives in</h2>
- <p class="sub">Panthers @ Bengals, 2014 · 37–37 after overtime · to Vivaldi's <i>Winter</i></p>
- <div class="pair"><div class="vid"><div class="vh"><b>60 seconds</b><span>10/10 key plays on a hit · match 0.74</span></div><video id="v60" controls preload="metadata" playsinline poster="https://github.com/atharva-729/match-mashups/releases/download/media-v1/hero_poster.jpg" src="https://github.com/atharva-729/match-mashups/releases/download/media-v1/Panthers-Bengals_Winter_60s_1080p.mp4"></video></div><div class="vid"><div class="vh"><b>120 seconds</b><span>18/18 key plays on a hit · match 0.57</span></div><video id="v120" controls preload="metadata" playsinline poster="https://github.com/atharva-729/match-mashups/releases/download/media-v1/hero_poster.jpg" src="https://github.com/atharva-729/match-mashups/releases/download/media-v1/Panthers-Bengals_Winter_120s_1080p.mp4"></video></div></div>
- <ul class="pts">
-  <li><mark>60 s keeps the moments. 120 s keeps the tension:</mark> only the longer cut has room to let the music drop and climb again. <a class="jump" style="margin:0" href="#how">Why ↓</a></li>
-  <li>Every score is answered, each with less time left, then <mark>a 36-yard kick misses wide right with 2 s to go.</mark></li>
- </ul>
+ <div class="game"><span class="tm"><span class="a">Carolina Panthers</span> @ <span class="h">Cincinnati Bengals</span></span>
+  <span class="meta">NFL · 2014 season, Week 6 · Final <b>37–37</b> after overtime</span><span class="song">♪ Vivaldi · Winter</span></div>
+ <p class="sub">Every score is answered, each with less time left. Then a 36-yard kick misses wide right with 2 s to go. Same game, same song, two lengths:</p>
+ <div class="cut rec"><video id="v120" controls preload="metadata" playsinline poster="https://github.com/atharva-729/match-mashups/releases/download/media-v1/hero_poster.jpg" src="https://github.com/atharva-729/match-mashups/releases/download/media-v1/Panthers-Bengals_Winter_120s_1080p.mp4"></video><div><span class="badge">★ Watch this one</span>
+  <div class="len">120 s<small>the full story</small></div>
+  <h3>The story has room to build</h3>
+  <p>The music drops after each tie and climbs again, so you feel the <mark>answer, wait, answer</mark> rhythm that made this game.</p>
+  <div class="fig">18/18 key plays on a hit · shape match 0.57</div></div></div>
+ <div class="cut"><video id="v60" controls preload="metadata" playsinline poster="https://github.com/atharva-729/match-mashups/releases/download/media-v1/hero_poster.jpg" src="https://github.com/atharva-729/match-mashups/releases/download/media-v1/Panthers-Bengals_Winter_60s_1080p.mp4"></video><div><span class="badge alt">Short on time</span>
+  <div class="len">60 s<small>the quick hit</small></div>
+  <h3>Every big moment, back to back</h3>
+  <p>All the scores and the miss, at full pace. <mark>Pure highlights</mark>, with less room for the tension between them.</p>
+  <div class="fig">10/10 key plays on a hit · shape match 0.74</div></div></div>
 </section>
 
 <section id="games" class="rv">
