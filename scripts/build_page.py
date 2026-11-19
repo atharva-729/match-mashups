@@ -135,7 +135,7 @@ h1,h2,h3,.num{font-family:"Space Grotesk",Inter,system-ui,sans-serif}
 .game .song{--c2:var(--acc)}
 .cut{display:grid;grid-template-columns:1.6fr 1fr;gap:22px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;margin:0 0 16px}
 .cut.rec{border-color:transparent;background:linear-gradient(var(--panel),var(--panel)) padding-box,var(--grad) border-box;box-shadow:0 0 40px #ff4f8b1f}
-.cut video,.cut .nov{border-radius:10px}
+.cut>*{min-width:0} .cut video,.cut .nov{display:block;width:100%;height:auto;aspect-ratio:16/9;object-fit:contain;background:#000;border-radius:10px}
 .cut .len{font:700 34px "Space Grotesk";line-height:1} .cut .len small{font-size:15px;color:var(--mut);font-weight:500;margin-left:6px}
 .badge{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#0b0d12;background:var(--grad);border-radius:99px;padding:3px 10px;margin-bottom:10px}
 .badge.alt{background:var(--panel2);color:var(--mut);border:1px solid var(--line)}
