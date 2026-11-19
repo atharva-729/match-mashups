@@ -21,3 +21,15 @@ logs/v2_player_*.png
 # private handoff notes and session context stay local
 _claude_context/
 HANDOFF_WORK_LAPTOP.md
+
+# private notes: never committed
+HANDOFF*.md
+PUBLISH.md
+START_HERE.md
+DEMO.md
+SUMMARY.md
+v2.md
+match-mashups-song-character.md
+logs/*.md
+_claude_context/
+*.zip
