@@ -17,7 +17,8 @@ REPO = "https://github.com/atharva-729/match-mashups"
 TAG = "media-v1"
 RELEASE = f"{REPO}/releases/download/{TAG}/"
 HIGHLIGHT = ["nfl_car_cin_excite"]                                       # the Winter cuts
-EXCLUDE = {"nfl_car_cin_mkhits_build", "nfl_car_cin_mkhits_cresc"}      # Mountain King tries, dropped
+EXCLUDE = {"nfl_car_cin_mkhits_build", "nfl_car_cin_mkhits_cresc",     # Mountain King tries, dropped
+           "ipl_mountain_king"}                                          # not on the public site
 SHARE = {60: ("outputs/_share/Panthers-Bengals_Neither-side-gives-in_60s_Winter_FINAL.mp4", "Panthers-Bengals_Winter_60s_1080p.mp4"),
          120: ("outputs/_share/Panthers-Bengals_Neither-side-gives-in_120s_Winter_FINAL.mp4", "Panthers-Bengals_Winter_120s_1080p.mp4")}
 
@@ -75,6 +76,7 @@ def main():
     import build_page
     build_page.VIDEO = {L: base + name for L, (_, name) in SHARE.items()}
     build_page.PLAYER_LINK = "player/"
+    build_page.MEDIA_BASE = base
     build_page.main()
     size = sum(p.stat().st_size for p in rel.iterdir()) / 1e6
     print(f"site -> {docs}  ({len(cards)} cards, highlights: {HIGHLIGHT})")

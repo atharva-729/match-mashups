@@ -1,7 +1,7 @@
 # footage, songs and renders never go in git
 inputs/
 work/
-outputs/
+/outputs/
 *.mp4
 *.mov
 *.mkv
