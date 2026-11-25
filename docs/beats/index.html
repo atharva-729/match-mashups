@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Match Mashups · Beats</title>
+<meta name="description" content="Generated music scored to the action: every hit lands on the frame where it happens. Three 30-second clips, the third built in about 8 minutes.">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#07090d;--panel:#11151d;--panel2:#161b25;--line:#252c39;--fg:#eef1f6;--mut:#8f99a8;--acc:#f2b33d;--pink:#ff4f8b;--blue:#3ad1ff;--green:#3ecf8e;
+ --grad:linear-gradient(90deg,#ff4f8b,#f2b33d 50%,#3ad1ff)}
+*{box-sizing:border-box} html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;overflow-x:hidden}
+body:before{content:"";position:fixed;inset:-20%;z-index:-1;pointer-events:none;
+ background:radial-gradient(40% 35% at 15% 10%,#ff4f8b22,transparent 70%),radial-gradient(40% 35% at 85% 20%,#3ad1ff1f,transparent 70%),radial-gradient(45% 40% at 50% 100%,#f2b33d14,transparent 70%);
+ animation:drift 18s ease-in-out infinite alternate}
+@keyframes drift{to{transform:translate(3%,-2%) scale(1.06)}}
+a{color:inherit}
+.wrap{max-width:1180px;margin:0 auto;padding:0 16px}
+h1,h2,h3,.num{font-family:"Space Grotesk",Inter,system-ui,sans-serif}
+h1{font-size:clamp(30px,4.4vw,46px);line-height:1.1;margin:10px 0 12px}
+h2{font-size:clamp(22px,2.6vw,28px);margin:46px 0 6px}
+.grad{background:var(--grad);background-size:200% auto;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shine 6s linear infinite}
+@keyframes shine{to{background-position:200% center}}
+.tag{display:inline-flex;gap:8px;align-items:center;font:600 12px Inter;letter-spacing:.12em;text-transform:uppercase;color:var(--mut)}
+.tag a{color:var(--mut)}
+.lede{font-size:17px;color:#c9d0da;max-width:760px;margin:0 0 14px}
+.hero{display:grid;grid-template-columns:1.25fr 1fr;gap:28px;align-items:start;padding:34px 0 10px}
+.hero>*{min-width:0}
+ul.how{margin:0;padding:0;list-style:none}
+ul.how li{position:relative;padding:7px 0 7px 30px;border-bottom:1px solid var(--line);color:#d5dbe4}
+ul.how li b{color:var(--fg)}
+ul.how li:before{content:attr(data-n);position:absolute;left:0;top:8px;width:20px;height:20px;border-radius:6px;background:var(--panel2);color:var(--acc);font:700 12px "Space Grotesk";display:grid;place-items:center}
+.time{background:linear-gradient(var(--panel),var(--panel)) padding-box,var(--grad) border-box;border:1px solid transparent;border-radius:16px;padding:18px 20px;box-shadow:0 0 50px #ff4f8b1a}
+.time .big{font:700 64px/1 "Space Grotesk"} .time .big small{font-size:20px;color:var(--mut);margin-left:6px}
+.time p{margin:8px 0 0;color:#c9d0da}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0 6px}
+.tiles div{background:var(--panel2);border-radius:10px;padding:10px 12px}
+.tiles .num{font-size:24px;font-weight:700} .tiles span{display:block;color:var(--mut);font-size:12.5px;line-height:1.35}
+.hl{color:var(--acc);font-weight:600}
+.down{display:inline-block;margin-top:12px;color:var(--mut);font-size:14px}
+.data{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:12px 0 0}
+.data div{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;color:#c9d0da;font-size:14px}
+.data b{color:var(--fg);display:block;font-family:"Space Grotesk";font-size:16px}
+.clips{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:14px}
+.clip{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px;min-width:0;display:flex;flex-direction:column}
+.clip video{display:block;width:100%;aspect-ratio:16/9;background:#000;border-radius:10px;object-fit:contain}
+.clip h3{margin:10px 0 0;font-size:18px} .clip .sub{color:var(--mut);font-size:13.5px;margin:2px 0 8px}
+.sw{display:flex;gap:6px;margin:0 0 8px} .sw button{flex:1;background:var(--panel2);color:var(--mut);border:1px solid var(--line);border-radius:8px;padding:5px 8px;font:600 12.5px Inter;cursor:pointer}
+.sw button.on{color:var(--bg);background:var(--acc);border-color:var(--acc)}
+.map{position:relative;height:30px;border-radius:7px;background:#0b0e14;cursor:pointer;overflow:hidden;margin-top:auto}
+.map .seg{position:absolute;top:0;bottom:0}
+.map .s-build{background:#232a37} .map .s-sil{background:#07090d} .map .s-drop{background:var(--grad)}
+.map .s-rep{background:repeating-linear-gradient(45deg,#3ad1ff55 0 4px,#3ad1ff22 4px 8px)} .map .s-fin{background:var(--acc)}
+.map i{position:absolute;top:5px;bottom:5px;width:2px;margin-left:-1px;background:#eef1f6;border-radius:1px}
+.map i.big{top:2px;bottom:2px;width:3px;background:#fff}
+.mapk{display:flex;flex-wrap:wrap;gap:4px 12px;color:var(--mut);font-size:12px;margin-top:6px}
+.mapk i{display:inline-block;width:12px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.more{margin-top:6px;background:none;border:0;color:var(--blue);font:600 13px Inter;cursor:pointer;padding:0;text-align:left}
+.notes{margin:10px 0 0;padding-left:18px;color:#c9d0da;max-width:900px} .notes li{margin:6px 0}
+.notes b{color:var(--acc)}
+dialog{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:14px;padding:16px 18px;max-width:min(560px,92vw);width:100%}
+dialog::backdrop{background:#000a}
+dialog h3{margin:0 0 4px} dialog .x{float:right;background:none;border:0;color:var(--mut);font-size:22px;cursor:pointer;line-height:1}
+dialog table{width:100%;border-collapse:collapse;font-size:14px;margin-top:8px}
+dialog td{padding:6px 6px;border-bottom:1px solid var(--line);vertical-align:top} dialog td:first-child{color:var(--acc);font:600 13px "Space Grotesk";white-space:nowrap}
+dialog tr{cursor:pointer} dialog tr:hover td{background:var(--panel2)} dialog .w{color:var(--mut);font-size:12.5px}
+.sep{margin:56px 0 0;padding:16px 0;border-top:1px solid var(--line);color:var(--mut);font-size:15px}
+.below{color:#c9d0da;max-width:900px} .below h3{color:var(--fg);margin:22px 0 4px;font-size:18px} .below li{margin:5px 0}
+footer{color:var(--mut);font-size:13px;padding:40px 0 30px}
+@media (max-width:900px){.hero,.clips,.data{grid-template-columns:1fr}}
+@media (max-width:420px){.tiles{grid-template-columns:1fr}.time .big{font-size:52px}}
+</style></head>
+<body><div class="wrap">
+
+<header class="hero">
+ <div>
+  <span class="tag"><a href="../">Match Mashups</a> · Beats</span>
+  <h1>Music written <span class="grad">around the action</span>.</h1>
+  <p class="lede">Stock music never lands on the moment. Can a generated soundtrack put <span class="hl">every hit on the exact frame</span> where it happens, and tell the clip's story like a dance track?</p>
+  <ul class="how">
+   <li data-n="1"><b>Find the moments on the picture</b>, frame by frame: racket contact, the kick, ignition. Never the sound, which lags the picture by up to 0.14 s.</li>
+   <li data-n="2"><b>One steady tempo.</b> The footage is nudged a few percent so each moment lands on a beat.</li>
+   <li data-n="3"><b>Build like a dance track:</b> more notes as tension rises, one beat of silence, then the drop on the payoff.</li>
+   <li data-n="4"><b>Pay it off:</b> a full drop, a slow-motion replay, and a final hit on the replayed moment.</li>
+  </ul>
+  <a class="down" href="#how">How it works, step by step ↓</a>
+ </div>
+ <div class="time">
+  <span class="tag">Third clip, new subject: Apollo 11</span>
+  <div class="big num">8<small>minutes</small></div>
+  <p>Total time from picking the video to the finished clip, logged step by step.</p>
+  <div class="tiles">
+   <div><span class="num">3 min</span><span>finding and downloading the source film</span></div>
+   <div><span class="num">~5 min</span><span>the actual build, if the video is already downloaded</span></div>
+   <div><span class="num">≤10 min</span><span>expected even for a longer source video</span></div>
+  </div>
+  <p style="font-size:13px;color:var(--mut)">Once the engine existed, the third clip reused its drop, replay and instruments unchanged.</p>
+ </div>
+</header>
+
+<h2>The footage</h2>
+<div class="data">
+ <div><b>Tennis rally</b>Roland-Garros 2006, Mathieu vs Nadal: 13 shots and a volley winner. Fast, repeated hits test the timing.</div>
+ <div><b>NFL overtime</b>Ravens @ Chargers 2012: the tying kick with 0:03 left, then the overtime walk-off. A story told in a few big moments.</div>
+ <div><b>Apollo 11 launch</b>NASA's own launch film (US National Archives, public domain, silent). Not sport, so it tests whether the idea carries over.</div>
+</div>
+
+<h2>The three clips</h2>
+<p class="lede" style="font-size:15px">Click a beat map (or "every hit") to see what each hit is synced to; click a row to jump the video there.</p>
+<div class="clips" id="clips"></div>
+<div class="mapk" style="margin-top:12px">
+ <span><i style="background:#232a37"></i>build</span><span><i style="background:#07090d;border:1px solid #333"></i>one beat of silence</span>
+ <span><i style="background:var(--grad)"></i>drop</span><span><i style="background:repeating-linear-gradient(45deg,#3ad1ff88 0 3px,#3ad1ff33 3px 6px)"></i>slow-mo replay</span>
+ <span><i style="background:var(--acc)"></i>final hit, ring-out</span><span><i style="background:#fff;width:3px"></i>a hit on a checked frame</span>
+</div>
+
+<h2>What the numbers don't show</h2>
+<ul class="notes">
+ <li><b>The sound lies.</b> Broadcast audio arrives 65–140 ms after the picture, and for the far tennis player the loudest sound is often <b>the bounce, not the racket</b>. Hits placed on the sound feel late. Every hit here sits on a frame checked by eye.</li>
+ <li><b>Silence is the loudest beat.</b> One beat of nothing (only the crowd, or nothing at all) right before the drop is what makes the drop land.</li>
+ <li><b>The music has to lead.</b> Commentary sounded on top even at 30% of the energy: a voice stays clear when it's quiet. It now sits about 13 LU under the music, or it's removed.</li>
+ <li><b>A cut is a perfect hit.</b> A rocket lifts off gradually, with no single frame. So the drop goes on a hard cut, which changes on an exact frame.</li>
+</ul>
+
+<div class="sep" id="how">That is the result. Everything below is the how.</div>
+<div class="below">
+ <h3>The pipeline</h3>
+ <ol>
+  <li><b>Events from the picture.</b> Frame strips, motion and colour measures, ball and rocket tracking; each hit checked against the frames before and after (ball in, ball out).</li>
+  <li><b>Tempo and map.</b> One tempo for the clip; each stretch between two events gets a whole number of beats and a speed nudge (at most ~10%, usually under 5%). Cuts land on beats; the payoff lands on a bar's first beat.</li>
+  <li><b>The score.</b> Written by code, note by note: tuned booms on each hit, a pulse, a pad, then the build (snare roll, riser), one beat of silence, and the drop (kick, clap, 808, pumping synth chords, lead melody, house piano, strings, brass, vocal-style chops), then the slow-motion replay and the final hit.</li>
+  <li><b>Mix and render.</b> Original sound (crowd, commentary) under the music or removed; video rendered with the map, captions and a flash on each big hit.</li>
+ </ol>
+ <h3>Rules learned from feedback</h3>
+ <ul>
+  <li>Put hits on the picture, never the sound.</li>
+  <li>The key moment of the clip must be exact; check it by following the ball or the object, not by guessing a delay.</li>
+  <li>A drop that just ends doesn't pay off: extend 5–10 s with a full drop, a slow-motion replay and a final hit.</li>
+  <li>Music in front; commentary well under it, or off.</li>
+ </ul>
+ <h3>Caveats</h3>
+ <ul>
+  <li>Tennis and NFL clips use broadcast footage and are shown as a demonstration only. The Apollo 11 film is public domain.</li>
+  <li>No AI music model and no samples: every sound is synthesised by code, so each note can be placed to the millisecond.</li>
+  <li>Hit timing is exact to the sample in the music; event frames are as exact as the footage allows (about ±1 frame where the action is tiny or far away).</li>
+ </ul>
+</div>
+<footer><a href="../">← Match Mashups</a> · Videos are hosted on the repository's releases page.</footer>
+</div>
+
+<dialog id="dlg"><button class="x" aria-label="Close" onclick="dlg.close()">×</button><h3 id="dt"></h3><div class="w" id="dw"></div><table id="tb"></table></dialog>
+
+<script>
+const R = "https://github.com/atharva-729/match-mashups/releases/download/beats-v1/";
+const CLIPS = [
+ {id:"tennis", title:"Tennis: one rally", sub:"Roland-Garros 2006 · 175 BPM · 30 s", src:{music:R+"beats_tennis_rally.mp4"}, poster:R+"beats_tennis_rally.jpg", total:30.17,
+  segs:[["build",0,20.40],["sil",20.40,20.57],["drop",20.57,26.06],["rep",26.06,28.80],["fin",28.80,30.17]],
+  why:"Every shot is a beat; the winner is the drop.",
+  ev:[[2.74,"Serve","racket contact (near player)"],[4.11,"Shot 1","Nadal (far): racket contact, checked from frames"],[5.83,"Shot 2","Mathieu (near): ball in / ball out at the racket"],
+      [7.20,"Shot 3","Nadal: on the racket, not the bounce (the sound was the bounce)"],[8.91,"Shot 4","Mathieu"],[10.29,"Shot 5","Nadal: on the racket, not the bounce"],
+      [11.66,"Shot 6","Mathieu"],[13.03,"Shot 7","Nadal: on the racket, not the bounce"],[14.40,"Shot 8","Mathieu"],[15.77,"Shot 9","Nadal"],
+      [16.80,"Shot 10","Mathieu: the lob"],[18.86,"Shot 11","Nadal takes the lob: the key shot, found by following the ball into the racket"],[19.89,"Shot 12","Mathieu"],
+      [20.57,"Winner = DROP","Nadal's volley winner, after half a beat of silence",1],[23.31,"Cut","to the Nadal close-up, on a beat"],[26.06,"Replay","the volley in slow motion"],[28.80,"Final hit","on the replayed volley contact",1]]},
+ {id:"nfl", title:"NFL: tie, overtime, walk-off", sub:"Ravens @ Chargers 2012 · 135 BPM · 30 s", src:{music:R+"beats_nfl_ot_music_only.mp4", comm:R+"beats_nfl_ot_commentary.mp4"}, poster:R+"beats_nfl_ot_music_only.jpg", total:30.22,
+  segs:[["build",0,17.34],["sil",17.34,17.78],["drop",17.78,24.89],["rep",24.89,28.44],["fin",28.44,30.22]],
+  why:"The tying kick sets it up; the winning kick's \"good\" is the drop.",
+  ev:[[2.00,"Snap","ball leaves the centre (tying field goal, 0:03 left)"],[3.11,"Kick","Tucker's foot on the ball"],[6.67,"Good","officials' arms go up: 13-13"],
+      [10.67,"Catch","Flacco to Smith, 31 yards (overtime)"],[12.22,"Down","Smith brought down"],[14.00,"Snap","the winning field goal"],[15.11,"Kick","foot on ball; snare roll and riser start"],
+      [17.78,"Good = DROP","officials' arms up, after one beat with only the crowd",1],[24.89,"Replay","the kick in slow motion"],[28.44,"Final hit","on the replayed foot-on-ball",1]]},
+ {id:"apollo", title:"Apollo 11: launch", sub:"NASA film, public domain · 120 BPM · 30 s", src:{music:R+"beats_apollo11.mp4"}, poster:R+"beats_apollo11.jpg", total:30.0,
+  segs:[["build",0,15.5],["sil",15.5,16],["drop",16,24],["rep",24,28],["fin",28,30]],
+  why:"The countdown runs at real time: 120 BPM = one number per second.",
+  ev:[[2,"T-10","countdown on screen, one number per second"],[8,"Ignition","first flame you can see at the pad"],[12,"Liftoff","first motion of the rocket, tracked against the tower"],
+      [16,"DROP","hard cut to the long-lens climb, after one beat of silence",1],[24,"Replay","black-and-white pad camera, slow motion"],[28,"Final hit","black-and-white ignition",1]]}
+];
+const box = document.getElementById("clips"), dlg = document.getElementById("dlg");
+function fmt(t){return t.toFixed(2)+" s"}
+CLIPS.forEach(c=>{
+ const el = document.createElement("div"); el.className="clip";
+ const sw = c.src.comm ? `<div class="sw"><button class="on" data-k="music">Music only</button><button data-k="comm">With commentary</button></div>` : "";
+ el.innerHTML = `${sw}<video controls playsinline preload="metadata" poster="${c.poster}" src="${c.src.music}"></video>
+  <h3>${c.title}</h3><div class="sub">${c.sub}</div><div class="sub" style="color:#c9d0da">${c.why}</div>
+  <div class="map" title="Click to see every hit"></div><button class="more">Every hit (${c.ev.length}) →</button>`;
+ const v = el.querySelector("video"), m = el.querySelector(".map");
+ c.segs.forEach(([k,a,b])=>{const s=document.createElement("div"); s.className="seg s-"+k; s.style.left=(a/c.total*100)+"%"; s.style.width=((b-a)/c.total*100)+"%"; m.appendChild(s)});
+ c.ev.forEach(e=>{const i=document.createElement("i"); if(e[3]) i.className="big"; i.style.left=(e[0]/c.total*100)+"%"; i.title=fmt(e[0])+" · "+e[1]; m.appendChild(i)});
+ const open=()=>{document.getElementById("dt").textContent=c.title; document.getElementById("dw").textContent="Each hit and the frame it is placed on. Click a row to play from just before it.";
+  const tb=document.getElementById("tb"); tb.innerHTML="";
+  c.ev.forEach(e=>{const tr=document.createElement("tr"); tr.innerHTML=`<td>${fmt(e[0])}</td><td><b>${e[1]}</b><div class="w">${e[2]}</div></td>`;
+   tr.onclick=()=>{dlg.close(); v.currentTime=Math.max(0,e[0]-1.5); v.play(); v.scrollIntoView({block:"center",behavior:"smooth"})}; tb.appendChild(tr)});
+  dlg.showModal()};
+ m.onclick=open; el.querySelector(".more").onclick=open;
+ el.querySelectorAll(".sw button").forEach(b=>b.onclick=()=>{const t=v.currentTime, p=!v.paused; v.src=c.src[b.dataset.k]; v.currentTime=t; if(p) v.play();
+  el.querySelectorAll(".sw button").forEach(x=>x.classList.toggle("on",x===b))});
+ box.appendChild(el);
+});
+</script>
+</body></html>
